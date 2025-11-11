@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 400px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        h2 { color: #333; }
+        .username { font-weight: bold; color: #0077cc; }
+        button { padding: 8px 16px; background: #e74c3c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #c0392b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Welcome, <span class="username" id="username"></span>!</h2>
+        <button onclick="logout()">Logout</button>
+    </div>
+    <script>
+        // Assume username is stored in localStorage after login
+        document.getElementById('username').textContent = localStorage.getItem('username') || 'Bullet';
+        function logout() {
+            localStorage.removeItem('username');
+            localStorage.removeItem('token');
+            window.location.href = 'login.html';
+        }
+    </script>
+</body>
+</html>
