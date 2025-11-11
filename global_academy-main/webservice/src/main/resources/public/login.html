@@ -3,22 +3,104 @@
 <head>
   <meta charset="UTF-8">
   <title>Login Test</title>
-</head>
-<body>
-  <h2>Test Login</h2>
-  <form id="loginForm">
-    <label>
-      Username:
-      <input type="text" id="username" required>
-    </label><br><br>
-    <label>
-      Password:
-      <input type="password" id="password" required>
-    </label><br><br>
-    <button type="submit">Login</button>
-  </form>
 
-  <pre id="output"></pre>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f5f7fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    #loginForm {
+      background: #ffffff;
+      padding: 30px 35px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      width: 320px;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 6px;
+      color: #444;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 18px;
+      box-sizing: border-box;
+      transition: border-color 0.25s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #4a90e2;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      font-size: 15px;
+      background: #4a90e2;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.25s;
+    }
+
+    button:hover {
+      background: #357ac9;
+    }
+
+    #output {
+      margin-top: 20px;
+      background: #fff;
+      padding: 15px;
+      width: 320px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      font-size: 13px;
+      white-space: pre-wrap;
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+  <div>
+    <h2>Test Login</h2>
+
+    <form id="loginForm">
+      <label>Username:</label>
+      <input type="text" id="username" required>
+
+      <label>Password:</label>
+      <input type="password" id="password" required>
+
+      <button type="submit">Login</button>
+    </form>
+
+    <pre id="output"></pre>
+  </div>
 
   <script>
     document.getElementById("loginForm").addEventListener("submit", async (e) => {
@@ -36,8 +118,9 @@
           body: JSON.stringify({ username, password })
         });
 
-        const text = await res.text(); // raw response
+        const text = await res.text();
         output.textContent = `Status: ${res.status}\n\n${text}`;
+
         if (res.status === 200) {
           try {
             const data = JSON.parse(text);
@@ -53,5 +136,6 @@
       }
     });
   </script>
+
 </body>
 </html>
