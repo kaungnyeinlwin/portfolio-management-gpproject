@@ -19,7 +19,7 @@
     </div>
     <script>
         // Assume username is stored in localStorage after login
-        document.getElementById('username').textContent = localStorage.getItem('username') || 'Bullet';
+        document.getElementById('username').textContent = localStorage.getItem('username') || 'Alice';
         function logout() {
             localStorage.removeItem('username');
             localStorage.removeItem('token');
