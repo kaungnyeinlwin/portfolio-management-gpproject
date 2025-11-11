@@ -3,9 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Purrtfolio | Welcome</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Poppins", sans-serif;
+        }
+
+        body {
+            height: 100vh;
+            background: linear-gradient(135deg, #fce3ec, #ffe7c7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            text-align: center;
+            color: #333;
+        }
+
+        .logo {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background-color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin-bottom: 1.5rem;
+        }
+
+        .logo img {
+            width: 80px;
+            height: 80px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            color: #222;
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            font-size: 1.1rem;
+            color: #555;
+            margin-bottom: 2rem;
+        }
+
+        a.button {
+            text-decoration: none;
+            background-color: #ffb3c1;
+            color: #fff;
+            padding: 0.8rem 2rem;
+            border-radius: 30px;
+            font-weight: 600;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            transition: all 0.3s ease;
+        }
+
+        a.button:hover {
+            background-color: #ff94a2;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 14px rgba(0,0,0,0.2);
+        }
+
+        footer {
+            position: absolute;
+            bottom: 15px;
+            font-size: 0.9rem;
+            color: #777;
+        }
+    </style>
 </head>
 <body>
-    <a href="http://localhost:8080/login.html">Go To Login</a>
+    <div class="logo">
+        <!-- Replace 'cat-logo.png' with your own image -->
+        <img src="logo.png" alt="Purrtfolio Logo">
+    </div>
+    <h1>Welcome to Purrtfolio 🐾</h1>
+    <p>Your cozy place to showcase creativity and passion.</p>
+    <a href="http://localhost:8080/login.html" class="button">Go to Login</a>
+
+    <footer>© 2025 Purrtfolio. All rights reserved.</footer>
 </body>
 </html>
