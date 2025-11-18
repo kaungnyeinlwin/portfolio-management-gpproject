@@ -21,9 +21,13 @@
         // Assume username is stored in localStorage after login
         document.getElementById('username').textContent = localStorage.getItem('username') || 'Alice';
         function logout() {
+            // Clear client-side storage
             localStorage.removeItem('username');
             localStorage.removeItem('token');
-            window.location.href = 'login.html';
+            // Invalidate server session then navigate to login
+            fetch('/logout', { method: 'GET', credentials: 'same-origin' })
+              .then(() => { window.location.href = 'login.html'; })
+              .catch(() => { window.location.href = 'login.html'; });
         }
     </script>
 </body>
