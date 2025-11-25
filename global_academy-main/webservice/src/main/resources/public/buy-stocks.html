@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Purrtfolio | Buy Stocks</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: "Poppins", sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #fce3ec, #ffe7c7);
+      padding: 2rem;
+      color: #333;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      background: #fff;
+      padding: 1.5rem;
+      border-radius: 15px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .header h1 {
+      font-size: 1.8rem;
+      color: #222;
+    }
+
+    .back-btn {
+      background: #ffb3c1;
+      color: #fff;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .back-btn:hover {
+      background: #ff94a2;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .content {
+      background: #fff;
+      padding: 2rem;
+      border-radius: 15px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .content h2 {
+      font-size: 1.5rem;
+      color: #222;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid #ffb3c1;
+      padding-bottom: 0.5rem;
+    }
+
+    .search-section {
+      margin-bottom: 2rem;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .search-input,
+    .stock-select {
+      flex: 1;
+      min-width: 200px;
+      padding: 0.8rem;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+    }
+
+    .search-input:focus,
+    .stock-select:focus {
+      border-color: #ffb3c1;
+      outline: none;
+      box-shadow: 0 0 6px rgba(255, 179, 193, 0.4);
+    }
+
+    .stock-card {
+      background: linear-gradient(135deg, #fff, #faf5f0);
+      border: 2px solid #f0f0f0;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .stock-card:hover {
+      border-color: #ffb3c1;
+      box-shadow: 0 6px 16px rgba(255, 179, 193, 0.2);
+      transform: translateY(-4px);
+    }
+
+    .stock-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 1rem;
+    }
+
+    .stock-header h3 {
+      font-size: 1.2rem;
+      color: #222;
+    }
+
+    .stock-symbol {
+      background: #ffb3c1;
+      color: #fff;
+      padding: 0.3rem 0.8rem;
+      border-radius: 15px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .stock-name {
+      font-size: 0.9rem;
+      color: #777;
+      margin-bottom: 0.5rem;
+    }
+
+    .stock-price {
+      font-size: 1.5rem;
+      color: #ff6b9d;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+
+    .quantity-selector {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .quantity-selector label {
+      font-size: 0.9rem;
+      color: #555;
+      font-weight: 500;
+    }
+
+    .quantity-selector input {
+      width: 80px;
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+
+    .buy-btn {
+      width: 100%;
+      background: #ffb3c1;
+      color: #fff;
+      border: none;
+      padding: 0.8rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+
+    .buy-btn:hover {
+      background: #ff94a2;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .buy-btn:active {
+      transform: translateY(0);
+    }
+
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: #999;
+    }
+
+    .error {
+      background: #ffe5e5;
+      color: #d32f2f;
+      padding: 1rem;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+      border-left: 4px solid #d32f2f;
+    }
+
+    .success {
+      background: #e5f5e5;
+      color: #2e7d32;
+      padding: 1rem;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+      border-left: 4px solid #2e7d32;
+    }
+
+    .no-results {
+      text-align: center;
+      padding: 2rem;
+      color: #999;
+      font-size: 1.1rem;
+    }
+
+    .reset-btn {
+      background: #e0e0e0;
+      color: #333;
+      border: none;
+      padding: 0.8rem 1.2rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .reset-btn:hover {
+      background: #d0d0d0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📈 Buy Stocks</h1>
+      <button class="back-btn" onclick="goToDashboard()">← Back to Welcome</button>
+    </div>
+
+    <div class="content">
+      <h2>Search & Buy Stocks</h2>
+
+      <div id="errorMessage"></div>
+      <div id="successMessage"></div>
+
+      <div id="loadingMessage" class="loading">Loading available stocks...</div>
+
+      <div id="stocksContent" style="display: none;">
+        <div class="search-section">
+          <input
+            type="text"
+            id="searchInput"
+            class="search-input"
+            placeholder="Search by company name or symbol (e.g., Apple, AAPL)..."
+            onkeyup="filterStocks()"
+          />
+          <select id="stockSelect" class="stock-select" onchange="selectStock()">
+            <option value="">Select a stock...</option>
+          </select>
+          <button class="reset-btn" onclick="resetSearch()">Reset</button>
+        </div>
+
+        <div id="stockContainer"></div>
+        <div id="noResultsMessage" class="no-results" style="display: none;">
+          No stocks found. Try a different search.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allStocks = [];
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const username = localStorage.getItem("username");
+      if (!username) {
+        window.location.href = "/login.html";
+        return;
+      }
+
+      loadStocks();
+    });
+
+    async function loadStocks() {
+      try {
+        const response = await fetch("/api/stocks", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to load stocks");
+        }
+
+        const data = await response.json();
+        allStocks = data.stocks || [];
+        displayStocks(allStocks);
+        populateDropdown();
+      } catch (error) {
+        console.error("Error loading stocks:", error);
+        document.getElementById("loadingMessage").style.display = "none";
+        document.getElementById("errorMessage").innerHTML =
+          '<div class="error">Error loading stocks: ' + error.message + "</div>";
+      }
+    }
+
+    function populateDropdown() {
+      const select = document.getElementById("stockSelect");
+      
+      allStocks.forEach((stock) => {
+        const option = document.createElement("option");
+        option.value = stock.symbol;
+        option.textContent = `${stock.symbol} - ${stock.name}`;
+        select.appendChild(option);
+      });
+    }
+
+    function filterStocks() {
+      const searchTerm = document.getElementById("searchInput").value.toLowerCase();
+      
+      if (searchTerm === "") {
+        displayStocks(allStocks);
+        return;
+      }
+
+      const filtered = allStocks.filter((stock) => {
+        const name = stock.name.toLowerCase();
+        const symbol = stock.symbol.toLowerCase();
+        return name.includes(searchTerm) || symbol.includes(searchTerm);
+      });
+
+      displayStocks(filtered);
+    }
+
+    function selectStock() {
+      const selectedSymbol = document.getElementById("stockSelect").value;
+      
+      if (selectedSymbol === "") {
+        displayStocks(allStocks);
+        return;
+      }
+
+      const stock = allStocks.find((s) => s.symbol === selectedSymbol);
+      if (stock) {
+        displayStocks([stock]);
+        document.getElementById("searchInput").value = "";
+      }
+    }
+
+    function resetSearch() {
+      document.getElementById("searchInput").value = "";
+      document.getElementById("stockSelect").value = "";
+      displayStocks(allStocks);
+    }
+
+    function displayStocks(stocks) {
+      document.getElementById("loadingMessage").style.display = "none";
+      document.getElementById("stocksContent").style.display = "block";
+
+      const container = document.getElementById("stockContainer");
+      container.innerHTML = "";
+
+      if (stocks.length === 0) {
+        document.getElementById("noResultsMessage").style.display = "block";
+        return;
+      }
+
+      document.getElementById("noResultsMessage").style.display = "none";
+
+      stocks.forEach((stock) => {
+        const card = document.createElement("div");
+        card.className = "stock-card";
+        card.innerHTML = `
+          <div class="stock-header">
+            <div>
+              <h3>${stock.name}</h3>
+              <div class="stock-name">${stock.symbol}</div>
+            </div>
+            <span class="stock-symbol">${stock.symbol}</span>
+          </div>
+          <div class="stock-price">$${parseFloat(stock.price).toFixed(2)}</div>
+          <div class="quantity-selector">
+            <label for="qty-${stock.symbol}">Quantity:</label>
+            <input type="number" id="qty-${stock.symbol}" min="1" value="1" />
+          </div>
+          <button class="buy-btn" onclick="buyStock('${stock.symbol}', '${stock.name}', ${stock.price})">
+            🛒 Buy Stock
+          </button>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    async function buyStock(symbol, name, price) {
+      const quantityInput = document.getElementById(`qty-${symbol}`);
+      const quantity = parseInt(quantityInput.value);
+
+      if (isNaN(quantity) || quantity < 1) {
+        showError("Please enter a valid quantity");
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/buy-stock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbol: symbol,
+            name: name,
+            price: price,
+            quantity: quantity,
+          }),
+        });
+
+        if (response.status === 401) {
+          window.location.href = "/login.html";
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error("Failed to buy stock");
+        }
+
+        showSuccess(`Successfully purchased ${quantity} share(s) of ${symbol}!`);
+        setTimeout(() => {
+          window.location.href = "/welcome.html";
+        }, 1500);
+      } catch (error) {
+        console.error("Error buying stock:", error);
+        showError("Error purchasing stock: " + error.message);
+      }
+    }
+
+    function showError(message) {
+      const errorDiv = document.getElementById("errorMessage");
+      errorDiv.innerHTML = `<div class="error">${message}</div>`;
+      setTimeout(() => {
+        errorDiv.innerHTML = "";
+      }, 5000);
+    }
+
+    function showSuccess(message) {
+      const successDiv = document.getElementById("successMessage");
+      successDiv.innerHTML = `<div class="success">${message}</div>`;
+      setTimeout(() => {
+        successDiv.innerHTML = "";
+      }, 5000);
+    }
+
+    function goToDashboard() {
+      window.location.href = "/welcome.html";
+    }
+  </script>
+</body>
+</html>

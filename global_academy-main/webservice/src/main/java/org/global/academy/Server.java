@@ -3,16 +3,30 @@ package org.global.academy;
 import static spark.Spark.*;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.Path;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 import java.util.Map;
+import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Random;
+import java.util.stream.Collectors;
 
 public class Server {
     // Key for the session attribute
     private static final String LOGGED_IN_KEY = "isLoggedIn";
+    private static final Map<String, Portfolio> userPortfolios = new HashMap<>();
+    private static final String STOCKDATA_API_TOKEN = "S2LH4DIxeG2KYas4RG7O6S1LfotrRvyOIO9njPVp";
+    private static final String STOCKDATA_API_URL = "https://api.stockdata.org/v1/data/quote";
 
     public static void main(String[] args) {
         port(8080);
@@ -50,10 +64,10 @@ public class Server {
             // If the file cannot be read, log the error and halt the application startup.
             System.err.println("FATAL: Could not read welcome.html content.");
             e.printStackTrace();
-            // This is cleaner than returning null; it ensures the server doesn't start without key files.
-            return; 
+            // This is cleaner than returning null; it ensures the server doesn't start
+            // without key files.
+            return;
         }
-        
 
         Gson gson = new Gson();
 
@@ -73,19 +87,34 @@ public class Server {
                 halt();
             }
         });
+        before("/dashboard.html", (req, res) -> {
+            Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
+            if (isLoggedIn == null || !isLoggedIn) {
+                res.redirect("/login.html");
+                halt();
+            }
+        });
+        before("/buy-stocks.html", (req, res) -> {
+            Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
+            if (isLoggedIn == null || !isLoggedIn) {
+                res.redirect("/login.html");
+                halt();
+            }
+        });
         get("/welcome", (req, res) -> {
             // filter already enforced session; just return content
             res.type("text/html");
             return welcomePageContent;
         });
-        
-        // Also serve the same secured page at /welcome.html so client redirects to that path work
+
+        // Also serve the same secured page at /welcome.html so client redirects to that
+        // path work
         get("/welcome.html", (req, res) -> {
             // filter already enforced session; just return content
             res.type("text/html");
             return welcomePageContent;
         });
-        
+
         // Logout endpoint: invalidate server session and redirect to login
         get("/logout", (req, res) -> {
             // Do not create a session if none exists
@@ -104,16 +133,87 @@ public class Server {
             return gson.toJson(Map.of("number", randomInt));
         });
 
+        // Portfolio endpoint: get user's portfolio
+        get("/api/portfolio", (req, res) -> {
+            Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
+            if (isLoggedIn == null || !isLoggedIn) {
+                res.status(401);
+                res.type("application/json");
+                return gson.toJson(new ErrorResponse("Not logged in"));
+            }
+
+            String username = req.session().attribute("username");
+            Portfolio portfolio = userPortfolios.get(username);
+
+            if (portfolio == null) {
+                portfolio = new Portfolio();
+                userPortfolios.put(username, portfolio);
+            }
+
+            // Get aggregated holdings with quantities
+            java.util.Map<String, java.util.Map<String, Object>> aggregatedMap = portfolio.getAggregatedHoldings();
+            java.util.List<java.util.Map<String, Object>> holdings = new java.util.ArrayList<>(aggregatedMap.values());
+
+            res.type("application/json");
+            return gson.toJson(Map.of(
+                    "username", username,
+                    "holdings", holdings,
+                    "totalValue", portfolio.getValue()));
+        });
+
+        // Stocks endpoint: get available stocks to buy with real prices
+        get("/api/stocks", (req, res) -> {
+            String[] symbols = { "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "INTC" };
+            java.util.List<Map<String, Object>> stocks = fetchRealStockPrices(symbols);
+
+            res.type("application/json");
+            return gson.toJson(Map.of("stocks", stocks));
+        });
+
+        // Buy stock endpoint
+        post("/api/buy-stock", (req, res) -> {
+            Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
+            if (isLoggedIn == null || !isLoggedIn) {
+                res.status(401);
+                res.type("application/json");
+                return gson.toJson(new ErrorResponse("Not logged in"));
+            }
+
+            BuyStockRequest buyReq = gson.fromJson(req.body(), BuyStockRequest.class);
+            String username = req.session().attribute("username");
+
+            Portfolio portfolio = userPortfolios.get(username);
+            if (portfolio == null) {
+                portfolio = new Portfolio();
+                userPortfolios.put(username, portfolio);
+            }
+
+            // Create and add stock to portfolio
+            Stock newStock = new Stock(buyReq.name, buyReq.symbol, "NASDAQ", buyReq.price);
+            portfolio.addStock(newStock, buyReq.quantity);
+
+            res.type("application/json");
+            return gson.toJson(Map.of("success", true, "message", "Stock purchased successfully"));
+        });
+
         // 3. Update /login route
         post("/login", (req, res) -> {
             System.out.println("Received /login request with body: " + req.body());
             LoginRequest lr = gson.fromJson(req.body(), LoginRequest.class);
-            
+
             if ("alice".equals(lr.username) && "secret".equals(lr.password)) {
-                
+
                 // *** SUCCESSFUL LOGIN: SET SESSION FLAG ***
                 req.session(true).attribute(LOGGED_IN_KEY, true);
-                
+                req.session().attribute("username", lr.username);
+
+                // Initialize portfolio for user if not exists
+                if (!userPortfolios.containsKey(lr.username)) {
+                    Portfolio portfolio = new Portfolio();
+                    // Start with empty portfolio (0 holdings)
+                    userPortfolios.put(lr.username, portfolio);
+                }
+
                 res.type("application/json");
                 // In a real app, you would also redirect the client-side after this response
                 return gson.toJson(new LoginResponse("a-fake-token", lr.username));
@@ -147,5 +247,85 @@ public class Server {
         ErrorResponse(String e) {
             error = e;
         }
+    }
+
+    static class BuyStockRequest {
+        String symbol;
+        String name;
+        double price;
+        int quantity;
+    }
+
+    // Helper method to fetch real stock prices from StockData API
+    private static java.util.List<Map<String, Object>> fetchRealStockPrices(String[] symbols) {
+        java.util.List<Map<String, Object>> stocks = new java.util.ArrayList<>();
+
+        try {
+            String symbolsParam = String.join(",", symbols);
+            String url = STOCKDATA_API_URL + "?symbols=" + symbolsParam + "&api_token=" + STOCKDATA_API_TOKEN;
+
+            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(url))
+                    .GET()
+                    .build();
+
+            java.net.http.HttpResponse<String> response = client.send(request,
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                Gson gson = new Gson();
+                JsonObject jsonResponse = gson.fromJson(response.body(), JsonObject.class);
+
+                if (jsonResponse.has("data") && jsonResponse.get("data").isJsonArray()) {
+                    JsonArray dataArray = jsonResponse.getAsJsonArray("data");
+
+                    for (int i = 0; i < dataArray.size(); i++) {
+                        JsonObject stock = dataArray.get(i).getAsJsonObject();
+
+                        Map<String, Object> stockData = new HashMap<>();
+                        stockData.put("symbol", stock.get("ticker").getAsString());
+                        stockData.put("name", stock.get("name").getAsString());
+                        stockData.put("price", stock.get("price").getAsDouble());
+
+                        stocks.add(stockData);
+                    }
+                }
+            } else {
+                // Fallback to sample data if API call fails
+                stocks = getFallbackStockData();
+            }
+        } catch (Exception e) {
+            System.err.println("Error fetching stock prices: " + e.getMessage());
+            // Fallback to sample data if there's any error
+            stocks = getFallbackStockData();
+        }
+
+        return stocks;
+    }
+
+    // Fallback method if API call fails
+    private static java.util.List<Map<String, Object>> getFallbackStockData() {
+        java.util.List<Map<String, Object>> stocks = new java.util.ArrayList<>();
+        Stock[] availableStocks = {
+                new Stock("Apple", "AAPL", "NASDAQ", 190.0),
+                new Stock("Microsoft", "MSFT", "NASDAQ", 420.0),
+                new Stock("Google", "GOOGL", "NASDAQ", 140.0),
+                new Stock("Amazon", "AMZN", "NASDAQ", 180.0),
+                new Stock("Tesla", "TSLA", "NASDAQ", 250.0),
+                new Stock("Meta", "META", "NASDAQ", 480.0),
+                new Stock("Nvidia", "NVDA", "NASDAQ", 875.0),
+                new Stock("Intel", "INTC", "NASDAQ", 45.0)
+        };
+
+        for (Stock stock : availableStocks) {
+            Map<String, Object> stockData = new HashMap<>();
+            stockData.put("symbol", stock.getSymbol());
+            stockData.put("name", stock.getCompanyName());
+            stockData.put("price", stock.getPrice());
+            stocks.add(stockData);
+        }
+
+        return stocks;
     }
 }

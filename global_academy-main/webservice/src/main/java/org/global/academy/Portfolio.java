@@ -3,6 +3,8 @@ package org.global.academy;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 public class Portfolio {
 
@@ -49,6 +51,43 @@ public class Portfolio {
             totalValue += stock.getPrice();
         }
         return totalValue;
+    }
+
+    public List<Stock> getHoldings() {
+        return new ArrayList<>(this.holdings);
+    }
+
+    // Get aggregated holdings by symbol with quantities and profit calculation
+    public Map<String, Map<String, Object>> getAggregatedHoldings() {
+        Map<String, Map<String, Object>> aggregated = new HashMap<>();
+
+        for (Stock stock : this.holdings) {
+            String symbol = stock.getSymbol();
+
+            if (aggregated.containsKey(symbol)) {
+                Map<String, Object> data = aggregated.get(symbol);
+                int quantity = (Integer) data.get("quantity");
+                double totalCurrentPrice = (Double) data.get("totalPrice");
+                double totalPurchasePrice = (Double) data.get("totalPurchasePrice");
+
+                data.put("quantity", quantity + 1);
+                data.put("totalPrice", totalCurrentPrice + stock.getPrice());
+                data.put("totalPurchasePrice", totalPurchasePrice + stock.getPurchasePrice());
+            } else {
+                Map<String, Object> data = new HashMap<>();
+                data.put("name", stock.getCompanyName());
+                data.put("symbol", symbol);
+                data.put("quantity", 1);
+                data.put("price", stock.getPrice());
+                data.put("purchasePrice", stock.getPurchasePrice());
+                data.put("totalPrice", stock.getPrice());
+                data.put("totalPurchasePrice", stock.getPurchasePrice());
+
+                aggregated.put(symbol, data);
+            }
+        }
+
+        return aggregated;
     }
 
     @Override
