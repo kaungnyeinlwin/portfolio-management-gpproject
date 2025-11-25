@@ -37,3 +37,5 @@ At Purrtfolio, we offer more than just management; we offer a cat-alyst for true
 It’s time to stop swatting at shadows and build a retirement fund that’s the cat’s meow. Join the thousands of clients who are already enjoying un-fur-gettable financial freedom.
 
 Schedule a FREE consultation today, and let's get this purrtfolio purring!
+
+![300px-Thumbs_Up_Crying_Cat](https://github.com/user-attachments/assets/14708027-3f79-4edf-a97d-9720c14966a0)
