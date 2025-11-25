@@ -1,8 +1,8 @@
-org\global\academy\Portfolio.class
-org\global\academy\Server$LoginRequest.class
-org\global\academy\Server$BuyStockRequest.class
-org\global\academy\Stock.class
-org\global\academy\Server$LoginResponse.class
-org\global\academy\Server.class
-org\global\academy\Server$ErrorResponse.class
-org\global\academy\UseStock.class
+org/global/academy/Portfolio.class
+org/global/academy/Stock.class
+org/global/academy/Server$BuyStockRequest.class
+org/global/academy/UseStock.class
+org/global/academy/Server$ErrorResponse.class
+org/global/academy/Server$LoginResponse.class
+org/global/academy/Server.class
+org/global/academy/Server$LoginRequest.class

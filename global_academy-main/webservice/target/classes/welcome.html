@@ -229,8 +229,10 @@
                 <th>Company</th>
                 <th>Symbol</th>
                 <th>Quantity</th>
-                <th>Price per Share</th>
+                <th>Price Per Share</th>
                 <th>Total Value</th>
+                <th>Buy Price</th>
+                <th>Profit/Loss</th>
               </tr>
             </thead>
             <tbody id="holdingsTableBody">
@@ -313,16 +315,25 @@
 
         holdings.forEach((stock) => {
           const quantity = stock.quantity || 1;
-          const pricePerShare = parseFloat(stock.price).toFixed(2);
-          const totalValue = (parseFloat(stock.price) * quantity).toFixed(2);
+          const currentPrice = parseFloat(stock.currentPrice || stock.price).toFixed(2);
+          const buyPrice = parseFloat(stock.purchasePrice || stock.price).toFixed(2);
+          const currentValue = (parseFloat(stock.currentPrice || stock.price) * quantity).toFixed(2);
+          const profit = parseFloat(stock.gain || 0).toFixed(2);
+          const profitPercent = parseFloat(stock.gainPercent || 0).toFixed(2);
+          
+          // Color code profit/loss
+          const profitColor = profit >= 0 ? '#27ae60' : '#e74c3c';
+          const profitSign = profit >= 0 ? '+' : '';
           
           const row = document.createElement("tr");
           row.innerHTML = `
             <td>${stock.name}</td>
             <td><strong>${stock.symbol}</strong></td>
             <td>${quantity}</td>
-            <td>$${pricePerShare}</td>
-            <td>$${totalValue}</td>
+            <td>$${currentPrice}</td>
+            <td>$${currentValue}</td>
+            <td>$${buyPrice}</td>
+            <td style="color: ${profitColor}; font-weight: 600;">${profitSign}$${profit} (${profitSign}${profitPercent}%)</td>
           `;
           tableBody.appendChild(row);
         });

@@ -71,6 +71,27 @@ public class Server {
 
         Gson gson = new Gson();
 
+        // Resolve holdings file: prefer the classpath resource '/public/holdings.json' when
+        // it's available on the filesystem (during development). If the resource is inside
+        // a jar (not writable) or missing, fall back to a local file './holdings.json'.
+        final Path holdingsFilePath;
+        Path temp = null;
+        try {
+            java.net.URL resourceUrl = Server.class.getResource("/public/holdings.json");
+            if (resourceUrl != null && "file".equals(resourceUrl.getProtocol())) {
+                temp = Paths.get(resourceUrl.toURI());
+            }
+        } catch (Exception e) {
+            System.err.println("Could not resolve classpath holdings.json (URI), will use fallback: " + e.getMessage());
+        }
+        if (temp == null) {
+            temp = Paths.get("holdings.json").toAbsolutePath();
+        }
+        holdingsFilePath = temp;
+
+        // Load persisted holdings into memory on startup (if any)
+        loadAllHoldings(gson, holdingsFilePath);
+
         // 2. The route can now safely use the final variable.
         // Ensure any access to welcome paths requires an active logged-in session
         before("/welcome", (req, res) -> {
@@ -133,7 +154,7 @@ public class Server {
             return gson.toJson(Map.of("number", randomInt));
         });
 
-        // Portfolio endpoint: get user's portfolio
+        // Portfolio endpoint: get user's portfolio with current prices and profit/loss
         get("/api/portfolio", (req, res) -> {
             Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
             if (isLoggedIn == null || !isLoggedIn) {
@@ -154,16 +175,46 @@ public class Server {
             java.util.Map<String, java.util.Map<String, Object>> aggregatedMap = portfolio.getAggregatedHoldings();
             java.util.List<java.util.Map<String, Object>> holdings = new java.util.ArrayList<>(aggregatedMap.values());
 
+            // Fetch current prices and enrich holdings with profit/loss
+            Map<String, Double> currentPrices = fetchCurrentPricesBySymbol(
+                    holdings.stream()
+                            .map(h -> h.get("symbol").toString())
+                            .collect(java.util.stream.Collectors.toList())
+                            .toArray(new String[0]));
+
+            for (java.util.Map<String, Object> holding : holdings) {
+                String symbol = holding.get("symbol").toString();
+                double currentPrice = currentPrices.getOrDefault(symbol, ((Number) holding.get("price")).doubleValue());
+                double purchasePrice = ((Number) holding.get("purchasePrice")).doubleValue();
+                int quantity = ((Number) holding.get("quantity")).intValue();
+
+                double gain = (currentPrice - purchasePrice) * quantity;
+                double gainPercent = purchasePrice > 0 ? ((currentPrice - purchasePrice) / purchasePrice) * 100 : 0;
+                double currentValue = currentPrice * quantity;
+
+                holding.put("currentPrice", currentPrice);
+                holding.put("gain", gain);
+                holding.put("gainPercent", gainPercent);
+                holding.put("currentValue", currentValue);
+            }
+
+            // Calculate total portfolio value
+            double totalValue = holdings.stream()
+                    .mapToDouble(h -> ((Number) h.get("currentValue")).doubleValue())
+                    .sum();
+
             res.type("application/json");
             return gson.toJson(Map.of(
                     "username", username,
                     "holdings", holdings,
-                    "totalValue", portfolio.getValue()));
+                    "totalValue", totalValue));
         });
 
         // Stocks endpoint: get available stocks to buy with real prices
         get("/api/stocks", (req, res) -> {
-            String[] symbols = { "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "INTC" };
+            String[] symbols = { "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "INTC", 
+                                 "AMD", "CRM", "ADBE", "NFLX", "PYPL", "IBM", "CSCO", 
+                                 "ORCL", "SAP", "INTU", "SHOP", "UBER" };
             java.util.List<Map<String, Object>> stocks = fetchRealStockPrices(symbols);
 
             res.type("application/json");
@@ -191,6 +242,9 @@ public class Server {
             // Create and add stock to portfolio
             Stock newStock = new Stock(buyReq.name, buyReq.symbol, "NASDAQ", buyReq.price);
             portfolio.addStock(newStock, buyReq.quantity);
+
+            // Persist the updated holdings after purchase
+            saveAllHoldings(gson, holdingsFilePath);
 
             res.type("application/json");
             return gson.toJson(Map.of("success", true, "message", "Stock purchased successfully"));
@@ -304,6 +358,85 @@ public class Server {
         return stocks;
     }
 
+    // Fetch current prices for a list of symbols and return as a map
+    private static Map<String, Double> fetchCurrentPricesBySymbol(String[] symbols) {
+        Map<String, Double> priceMap = new HashMap<>();
+
+        if (symbols == null || symbols.length == 0) {
+            return priceMap;
+        }
+
+        try {
+            String symbolsParam = String.join(",", symbols);
+            String url = STOCKDATA_API_URL + "?symbols=" + symbolsParam + "&api_token=" + STOCKDATA_API_TOKEN;
+
+            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(url))
+                    .GET()
+                    .build();
+
+            java.net.http.HttpResponse<String> response = client.send(request,
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                Gson gson = new Gson();
+                JsonObject jsonResponse = gson.fromJson(response.body(), JsonObject.class);
+
+                if (jsonResponse.has("data") && jsonResponse.get("data").isJsonArray()) {
+                    JsonArray dataArray = jsonResponse.getAsJsonArray("data");
+
+                    for (int i = 0; i < dataArray.size(); i++) {
+                        JsonObject stock = dataArray.get(i).getAsJsonObject();
+                        String symbol = stock.get("ticker").getAsString();
+                        double price = stock.get("price").getAsDouble();
+                        priceMap.put(symbol, price);
+                    }
+                }
+            } else {
+                // Fallback: use sample prices if API fails
+                populateFallbackPrices(priceMap, symbols);
+            }
+        } catch (Exception e) {
+            System.err.println("Error fetching current prices: " + e.getMessage());
+            // Fallback: use sample prices if there's any error
+            populateFallbackPrices(priceMap, symbols);
+        }
+
+        return priceMap;
+    }
+
+    // Populate price map with fallback prices
+    private static void populateFallbackPrices(Map<String, Double> priceMap, String[] symbols) {
+        Map<String, Double> fallbackPrices = new HashMap<>();
+        fallbackPrices.put("AAPL", 190.0);
+        fallbackPrices.put("MSFT", 420.0);
+        fallbackPrices.put("GOOGL", 140.0);
+        fallbackPrices.put("AMZN", 180.0);
+        fallbackPrices.put("TSLA", 250.0);
+        fallbackPrices.put("META", 480.0);
+        fallbackPrices.put("NVDA", 875.0);
+        fallbackPrices.put("INTC", 45.0);
+        fallbackPrices.put("AMD", 150.0);
+        fallbackPrices.put("CRM", 210.0);
+        fallbackPrices.put("ADBE", 520.0);
+        fallbackPrices.put("NFLX", 250.0);
+        fallbackPrices.put("PYPL", 95.0);
+        fallbackPrices.put("IBM", 180.0);
+        fallbackPrices.put("CSCO", 48.0);
+        fallbackPrices.put("ORCL", 140.0);
+        fallbackPrices.put("SAP", 110.0);
+        fallbackPrices.put("INTU", 580.0);
+        fallbackPrices.put("SHOP", 720.0);
+        fallbackPrices.put("UBER", 75.0);
+
+        for (String symbol : symbols) {
+            if (fallbackPrices.containsKey(symbol)) {
+                priceMap.put(symbol, fallbackPrices.get(symbol));
+            }
+        }
+    }
+
     // Fallback method if API call fails
     private static java.util.List<Map<String, Object>> getFallbackStockData() {
         java.util.List<Map<String, Object>> stocks = new java.util.ArrayList<>();
@@ -315,7 +448,19 @@ public class Server {
                 new Stock("Tesla", "TSLA", "NASDAQ", 250.0),
                 new Stock("Meta", "META", "NASDAQ", 480.0),
                 new Stock("Nvidia", "NVDA", "NASDAQ", 875.0),
-                new Stock("Intel", "INTC", "NASDAQ", 45.0)
+                new Stock("Intel", "INTC", "NASDAQ", 45.0),
+                new Stock("AMD", "AMD", "NASDAQ", 150.0),
+                new Stock("Salesforce", "CRM", "NYSE", 210.0),
+                new Stock("Adobe", "ADBE", "NASDAQ", 520.0),
+                new Stock("Netflix", "NFLX", "NASDAQ", 250.0),
+                new Stock("PayPal", "PYPL", "NASDAQ", 95.0),
+                new Stock("IBM", "IBM", "NYSE", 180.0),
+                new Stock("Cisco", "CSCO", "NASDAQ", 48.0),
+                new Stock("Oracle", "ORCL", "NYSE", 140.0),
+                new Stock("SAP", "SAP", "NYSE", 110.0),
+                new Stock("Intuit", "INTU", "NASDAQ", 580.0),
+                new Stock("Shopify", "SHOP", "NYSE", 720.0),
+                new Stock("Uber", "UBER", "NYSE", 75.0)
         };
 
         for (Stock stock : availableStocks) {
@@ -327,5 +472,108 @@ public class Server {
         }
 
         return stocks;
+    }
+
+    // Load holdings from a JSON file into in-memory portfolios
+    private static void loadAllHoldings(Gson gson, Path path) {
+        try {
+            if (!Files.exists(path)) {
+                // Create an initial empty structure
+                JsonObject root = new JsonObject();
+                root.add("holdings", new JsonObject());
+                root.addProperty("lastUpdate", "");
+                Files.writeString(path, gson.toJson(root), java.nio.charset.StandardCharsets.UTF_8,
+                        java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                System.out.println("Created new holdings file at: " + path.toAbsolutePath());
+                return;
+            }
+
+            String content = Files.readString(path, java.nio.charset.StandardCharsets.UTF_8);
+            if (content == null || content.isBlank()) {
+                return;
+            }
+
+            JsonObject root = gson.fromJson(content, JsonObject.class);
+            if (root == null || !root.has("holdings") || !root.get("holdings").isJsonObject()) {
+                return;
+            }
+
+            JsonObject holdingsObj = root.getAsJsonObject("holdings");
+            for (var entry : holdingsObj.entrySet()) {
+                String username = entry.getKey();
+                var jsonElement = entry.getValue();
+                if (!jsonElement.isJsonArray()) continue;
+
+                java.util.Iterator<com.google.gson.JsonElement> iter = jsonElement.getAsJsonArray().iterator();
+                Portfolio p = new Portfolio();
+
+                while (iter.hasNext()) {
+                    JsonObject h = iter.next().getAsJsonObject();
+                    String symbol = h.has("symbol") ? h.get("symbol").getAsString() : "";
+                    String name = h.has("name") ? h.get("name").getAsString() : "";
+                    double price = h.has("price") ? h.get("price").getAsDouble() : 0.0;
+                    double purchasePrice = h.has("purchasePrice") ? h.get("purchasePrice").getAsDouble() : price;
+                    int quantity = h.has("quantity") ? h.get("quantity").getAsInt() : 1;
+
+                    Stock s = new Stock(name, symbol, "NASDAQ", price);
+                    s.setPurchasePrice(purchasePrice);
+                    p.addStock(s, quantity);
+                }
+
+                userPortfolios.put(username, p);
+            }
+
+            System.out.println("Loaded holdings from: " + path.toAbsolutePath());
+        } catch (Exception e) {
+            System.err.println("Failed to load holdings: " + e.getMessage());
+        }
+    }
+
+    // Save current in-memory portfolios to the JSON file
+    private static void saveAllHoldings(Gson gson, Path path) {
+        try {
+            JsonObject root = new JsonObject();
+            JsonObject holdingsObj = new JsonObject();
+
+            for (var entry : userPortfolios.entrySet()) {
+                String username = entry.getKey();
+                Portfolio p = entry.getValue();
+                java.util.Map<String, java.util.Map<String, Object>> agg = p.getAggregatedHoldings();
+
+                JsonArray arr = new JsonArray();
+                for (var data : agg.values()) {
+                    JsonObject ho = new JsonObject();
+                    if (data.get("symbol") != null)
+                        ho.addProperty("symbol", data.get("symbol").toString());
+                    if (data.get("name") != null)
+                        ho.addProperty("name", data.get("name").toString());
+                    if (data.get("quantity") != null)
+                        ho.addProperty("quantity", ((Number) data.get("quantity")).intValue());
+                    if (data.get("price") != null)
+                        ho.addProperty("price", ((Number) data.get("price")).doubleValue());
+                    if (data.get("purchasePrice") != null)
+                        ho.addProperty("purchasePrice", ((Number) data.get("purchasePrice")).doubleValue());
+                    if (data.get("totalPrice") != null)
+                        ho.addProperty("totalPrice", ((Number) data.get("totalPrice")).doubleValue());
+                    if (data.get("totalPurchasePrice") != null)
+                        ho.addProperty("totalPurchasePrice", ((Number) data.get("totalPurchasePrice")).doubleValue());
+
+                    arr.add(ho);
+                }
+
+                holdingsObj.add(username, arr);
+            }
+
+            root.add("holdings", holdingsObj);
+            root.addProperty("lastUpdate", java.time.Instant.now().toString());
+
+            Files.writeString(path, gson.toJson(root), java.nio.charset.StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+
+            System.out.println("Saved holdings to: " + path.toAbsolutePath());
+        } catch (Exception e) {
+            System.err.println("Failed to save holdings: " + e.getMessage());
+        }
     }
 }
