@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Purrtfolio | Login</title>
+  <title>Purrtfolio | Sign Up</title>
   <style>
+    /* Copy CSS from login.html to preserve theme exactly */
     * {
       margin: 0;
       padding: 0;
@@ -131,70 +132,39 @@
       font-size: 0.85rem;
       color: #777;
     }
-
-    /* keep for compatibility if needed, but Create Account will use the same <button> styles */
-    .signup-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      text-decoration: none;
-      background: #e0e0e0;
-      color: #333;
-      border-radius: 25px;
-      padding: 12px;
-      font-weight: 600;
-      transition: background 0.3s ease;
-    }
-
-    .signup-button:hover {
-      background: #d1d1d1;
-    }
-
-    /* Stack buttons vertically so Create Account appears under Login and matches style */
-    .button-container {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-top: 8px;
-    }
   </style>
 </head>
 <body>
   <div class="logo">
-    <!-- Replace 'cat-logo.png' with your actual logo -->
     <img src="logo.png" alt="Purrtfolio Logo" />
   </div>
 
   <div class="login-container">
-    <h2>Login to Purrtfolio 🐾</h2>
+    <h2>Sign Up for Purrtfolio 🐾</h2>
 
-    <form id="loginForm">
+    <form id="signupForm">
       <label for="username">Username</label>
       <input type="text" id="username" required />
 
       <label for="password">Password</label>
       <input type="password" id="password" required />
 
-      <div class="button-container">
-        <button type="submit">Login</button>
-        <!-- Create Account button placed under Login and styled exactly like the Login button -->
-        <button type="button" id="createAccountBtn">Create Account</button>
-      </div>
+      <button type="submit">Create Account</button>
     </form>
 
-    <a href="index.html" class="back-link">← Back to Welcome</a>
+    <a href="login.html" class="back-link">← Back to Login</a>
   </div>
 
   <footer>© 2025 Purrtfolio. All rights reserved.</footer>
 
   <script>
-    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+    document.getElementById("signupForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const username = document.getElementById("username").value.trim();
       const password = document.getElementById("password").value.trim();
 
       try {
-        const res = await fetch("/login", {
+        const res = await fetch("/signup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, password }),
@@ -202,24 +172,17 @@
 
         const text = await res.text();
 
-        if (res.status === 200) {
-          const data = JSON.parse(text);
-          localStorage.setItem("username", data.username);
-          localStorage.setItem("token", data.token);
-          window.location.href = "welcome.html";
+        if (res.status === 201) {
+          alert("Account created. Please login.");
+          window.location.href = "login.html";
         } else {
-          let msg = "Login failed. Please check your username or password.";
-          try { msg = JSON.parse(text).error || msg; } catch (e) {}
+          let msg = "Failed to create account.";
+          try { msg = JSON.parse(text).error || text; } catch (e) {}
           alert(msg);
         }
       } catch (err) {
         alert("Error: " + err);
       }
-    });
-
-    // Navigate to signup page when Create Account is clicked
-    document.getElementById("createAccountBtn").addEventListener("click", () => {
-      window.location.href = "signup.html";
     });
   </script>
 </body>

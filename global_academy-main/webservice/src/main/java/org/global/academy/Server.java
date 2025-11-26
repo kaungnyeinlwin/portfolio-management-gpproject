@@ -5,6 +5,7 @@ import static spark.Spark.*;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.reflect.TypeToken;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.Path;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Random;
 import java.util.stream.Collectors;
+import java.lang.reflect.Type;
 
 public class Server {
     // Key for the session attribute
@@ -27,6 +29,9 @@ public class Server {
     private static final Map<String, Portfolio> userPortfolios = new HashMap<>();
     private static final String STOCKDATA_API_TOKEN = "S2LH4DIxeG2KYas4RG7O6S1LfotrRvyOIO9njPVp";
     private static final String STOCKDATA_API_URL = "https://api.stockdata.org/v1/data/quote";
+
+    // NEW: in-memory users loaded from users.json
+    private static final List<User> users = new ArrayList<>();
 
     public static void main(String[] args) {
         port(8080);
@@ -89,8 +94,25 @@ public class Server {
         }
         holdingsFilePath = temp;
 
-        // Load persisted holdings into memory on startup (if any)
+        // NEW: resolve users.json (prefer classpath /public/users.json when on filesystem)
+        final Path usersFilePath;
+        Path tmpUsers = null;
+        try {
+            java.net.URL resourceUrl = Server.class.getResource("/public/users.json");
+            if (resourceUrl != null && "file".equals(resourceUrl.getProtocol())) {
+                tmpUsers = Paths.get(resourceUrl.toURI());
+            }
+        } catch (Exception e) {
+            System.err.println("Could not resolve classpath users.json (URI), will use fallback: " + e.getMessage());
+        }
+        if (tmpUsers == null) {
+            tmpUsers = Paths.get("users.json").toAbsolutePath();
+        }
+        usersFilePath = tmpUsers;
+
+        // Load persisted holdings and users into memory on startup (if any)
         loadAllHoldings(gson, holdingsFilePath);
+        loadAllUsers(gson, usersFilePath); // NEW
 
         // 2. The route can now safely use the final variable.
         // Ensure any access to welcome paths requires an active logged-in session
@@ -250,13 +272,54 @@ public class Server {
             return gson.toJson(Map.of("success", true, "message", "Stock purchased successfully"));
         });
 
-        // 3. Update /login route
+        // NEW: Sign up route - uses usersFilePath and in-memory users list
+        post("/signup", (req, res) -> {
+            try {
+                LoginRequest signup = gson.fromJson(req.body(), LoginRequest.class);
+                if (signup == null || signup.username == null || signup.password == null ||
+                        signup.username.isBlank() || signup.password.isBlank()) {
+                    res.status(400);
+                    return gson.toJson(new ErrorResponse("username and password required"));
+                }
+
+                synchronized (users) {
+                    boolean exists = users.stream().anyMatch(u -> u.getUsername().equals(signup.username));
+                    if (exists) {
+                        res.status(409); // conflict
+                        res.type("application/json");
+                        return gson.toJson(new ErrorResponse("User already exists"));
+                    }
+                    User newUser = new User(signup.username, signup.password);
+                    users.add(newUser);
+                    saveAllUsers(gson, usersFilePath);
+                }
+
+                res.status(201);
+                res.type("application/json");
+                return gson.toJson(Map.of("success", true, "message", "User created"));
+            } catch (Exception ex) {
+                res.status(500);
+                res.type("application/json");
+                return gson.toJson(new ErrorResponse("Failed to create user"));
+            }
+        });
+
+        // 3. Update /login route to verify against users list
         post("/login", (req, res) -> {
             System.out.println("Received /login request with body: " + req.body());
             LoginRequest lr = gson.fromJson(req.body(), LoginRequest.class);
 
-            if ("alice".equals(lr.username) && "secret".equals(lr.password)) {
+            boolean authenticated = false;
+            synchronized (users) {
+                for (User u : users) {
+                    if (u.getUsername().equals(lr.username) && u.getPassword().equals(lr.password)) {
+                        authenticated = true;
+                        break;
+                    }
+                }
+            }
 
+            if (authenticated) {
                 // *** SUCCESSFUL LOGIN: SET SESSION FLAG ***
                 req.session(true).attribute(LOGGED_IN_KEY, true);
                 req.session().attribute("username", lr.username);
@@ -269,7 +332,7 @@ public class Server {
                 }
 
                 res.type("application/json");
-                // In a real app, you would also redirect the client-side after this response
+                // return token + username
                 return gson.toJson(new LoginResponse("a-fake-token", lr.username));
             } else {
                 // Failed login
@@ -278,6 +341,8 @@ public class Server {
                 return gson.toJson(new ErrorResponse("Invalid credentials"));
             }
         });
+
+        // ...existing code...
     }
 
     static class LoginRequest {
@@ -576,4 +641,54 @@ public class Server {
             System.err.println("Failed to save holdings: " + e.getMessage());
         }
     }
+
+    // NEW: load users.json -> populate users list
+    private static void loadAllUsers(Gson gson, Path path) {
+        try {
+            if (!Files.exists(path)) {
+                // create empty users structure
+                JsonObject root = new JsonObject();
+                root.add("users", new JsonArray());
+                Files.writeString(path, gson.toJson(root), java.nio.charset.StandardCharsets.UTF_8,
+                        java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                System.out.println("Created new users file at: " + path.toAbsolutePath());
+                return;
+            }
+
+            String content = Files.readString(path, java.nio.charset.StandardCharsets.UTF_8);
+            if (content == null || content.isBlank()) return;
+
+            JsonObject root = gson.fromJson(content, JsonObject.class);
+            if (root == null || !root.has("users") || !root.get("users").isJsonArray()) return;
+
+            JsonArray arr = root.getAsJsonArray("users");
+            Type userListType = new TypeToken<List<User>>() {}.getType();
+            List<User> loaded = gson.fromJson(arr, userListType);
+            if (loaded != null) {
+                synchronized (users) {
+                    users.clear();
+                    users.addAll(loaded);
+                }
+            }
+            System.out.println("Loaded users from: " + path.toAbsolutePath());
+        } catch (Exception e) {
+            System.err.println("Failed to load users: " + e.getMessage());
+        }
+    }
+
+    // NEW: save current users list to users.json
+    private static void saveAllUsers(Gson gson, Path path) {
+        try {
+            JsonObject root = new JsonObject();
+            JsonArray arr = (JsonArray) gson.toJsonTree(users);
+            root.add("users", arr);
+            Files.writeString(path, gson.toJson(root), java.nio.charset.StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+            System.out.println("Saved users to: " + path.toAbsolutePath());
+        } catch (Exception e) {
+            System.err.println("Failed to save users: " + e.getMessage());
+        }
+    }
 }
+
