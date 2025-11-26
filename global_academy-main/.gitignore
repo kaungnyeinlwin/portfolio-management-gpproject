@@ -66,3 +66,9 @@ build/
 # --------------------
 node_modules/
 
+# Ignore the data folder containing the local database
+data/
+webservice/data/
+
+# Ignore any random JSON files at the root (just in case)
+*.json

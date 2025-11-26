@@ -94,21 +94,59 @@ public class Server {
         }
         holdingsFilePath = temp;
 
-        // NEW: resolve users.json (prefer classpath /public/users.json when on filesystem)
-        final Path usersFilePath;
-        Path tmpUsers = null;
+        // NEW: resolve users.json under the webservice/data folder that lives with this project.
+        Path tmpUsersPath = null;
         try {
-            java.net.URL resourceUrl = Server.class.getResource("/public/users.json");
-            if (resourceUrl != null && "file".equals(resourceUrl.getProtocol())) {
-                tmpUsers = Paths.get(resourceUrl.toURI());
+            // Try to locate the "webservice" project folder by walking ancestors from the class location.
+            Path codeLocation = Paths.get(Server.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            Path start = codeLocation;
+            if (Files.isRegularFile(start)) { // running from a jar
+                start = start.getParent();
             }
+
+            // Walk up until we find a directory named "webservice"
+            while (start != null && !start.getFileName().toString().equalsIgnoreCase("webservice")) {
+                start = start.getParent();
+            }
+
+            // If not found, fall back to the process working directory (user likely running from project root)
+            if (start == null) {
+                start = Paths.get(System.getProperty("user.dir"));
+            }
+
+            Path dataDir = start.resolve("data");
+
+            // Ensure directory exists
+            if (!Files.exists(dataDir)) {
+                Files.createDirectories(dataDir);
+                System.out.println("Created data directory: " + dataDir.toAbsolutePath());
+            }
+
+            tmpUsersPath = dataDir.resolve("users.json");
+
+            // If users.json doesn't exist, create it and seed a default admin user
+            if (!Files.exists(tmpUsersPath)) {
+                JsonObject root = new JsonObject();
+                JsonArray arr = new JsonArray();
+                JsonObject admin = new JsonObject();
+                admin.addProperty("username", "admin");
+                admin.addProperty("password", "admin");
+                arr.add(admin);
+                root.add("users", arr);
+
+                Files.writeString(tmpUsersPath, gson.toJson(root), java.nio.charset.StandardCharsets.UTF_8,
+                        java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                System.out.println("Created users file with default admin at: " + tmpUsersPath.toAbsolutePath());
+            }
+
+            // Debug output: absolute path of the users.json being used
+            System.out.println("Using users file: " + tmpUsersPath.toAbsolutePath());
         } catch (Exception e) {
-            System.err.println("Could not resolve classpath users.json (URI), will use fallback: " + e.getMessage());
+            System.err.println("Could not prepare webservice/data/users.json, falling back to ./users.json: " + e.getMessage());
+            tmpUsersPath = Paths.get("users.json");
         }
-        if (tmpUsers == null) {
-            tmpUsers = Paths.get("users.json").toAbsolutePath();
-        }
-        usersFilePath = tmpUsers;
+        final Path usersFilePath = tmpUsersPath.toAbsolutePath();
 
         // Load persisted holdings and users into memory on startup (if any)
         loadAllHoldings(gson, holdingsFilePath);
