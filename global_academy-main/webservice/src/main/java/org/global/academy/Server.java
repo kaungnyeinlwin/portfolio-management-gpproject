@@ -380,39 +380,8 @@ public class Server {
             }
         });
 
-        // ...existing code...
-    }
-
-    static class LoginRequest {
-        String username;
-        String password;
-    }
-
-    static class LoginResponse {
-        String token;
-        String username;
-
-        LoginResponse(String t, String u) {
-            token = t;
-            username = u;
-        }
-    }
-
-    static class ErrorResponse {
-        String error;
-
-        ErrorResponse(String e) {
-            error = e;
-        }
-    }
-
-    static class BuyStockRequest {
-        String symbol;
-        String name;
-        double price;
-        int quantity;
-    }
-
+    } // <-- CLOSE main() HERE (was missing / misplaced)
+    
     // Helper method to fetch real stock prices from StockData API
     private static java.util.List<Map<String, Object>> fetchRealStockPrices(String[] symbols) {
         java.util.List<Map<String, Object>> stocks = new java.util.ArrayList<>();
@@ -437,15 +406,41 @@ public class Server {
                 if (jsonResponse.has("data") && jsonResponse.get("data").isJsonArray()) {
                     JsonArray dataArray = jsonResponse.getAsJsonArray("data");
 
+                    // build map of returned symbols -> stockData
+                    Map<String, Map<String, Object>> returned = new HashMap<>();
                     for (int i = 0; i < dataArray.size(); i++) {
                         JsonObject stock = dataArray.get(i).getAsJsonObject();
 
                         Map<String, Object> stockData = new HashMap<>();
-                        stockData.put("symbol", stock.get("ticker").getAsString());
-                        stockData.put("name", stock.get("name").getAsString());
-                        stockData.put("price", stock.get("price").getAsDouble());
+                        String ticker = stock.has("ticker") ? stock.get("ticker").getAsString() : null;
+                        stockData.put("symbol", ticker);
+                        stockData.put("name", stock.has("name") ? stock.get("name").getAsString() : ticker);
+                        stockData.put("price", stock.has("price") ? stock.get("price").getAsDouble() : 0.0);
 
-                        stocks.add(stockData);
+                        if (ticker != null) {
+                            returned.put(ticker, stockData);
+                        }
+                    }
+
+                    // ensure we return an entry for every requested symbol by filling missing from fallback
+                    Map<String, Map<String, Object>> fallbackMap = new HashMap<>();
+                    for (Map<String, Object> f : getFallbackStockData()) {
+                        fallbackMap.put(f.get("symbol").toString(), f);
+                    }
+
+                    for (String sym : symbols) {
+                        if (returned.containsKey(sym)) {
+                            stocks.add(returned.get(sym));
+                        } else if (fallbackMap.containsKey(sym)) {
+                            stocks.add(fallbackMap.get(sym));
+                        } else {
+                            // Generic placeholder if symbol not found anywhere
+                            Map<String, Object> placeholder = new HashMap<>();
+                            placeholder.put("symbol", sym);
+                            placeholder.put("name", sym);
+                            placeholder.put("price", 0.0);
+                            stocks.add(placeholder);
+                        }
                     }
                 }
             } else {
@@ -506,6 +501,9 @@ public class Server {
             populateFallbackPrices(priceMap, symbols);
         }
 
+        // Ensure any missing symbols get a fallback price (don't overwrite existing)
+        populateFallbackPrices(priceMap, symbols);
+
         return priceMap;
     }
 
@@ -534,7 +532,8 @@ public class Server {
         fallbackPrices.put("UBER", 75.0);
 
         for (String symbol : symbols) {
-            if (fallbackPrices.containsKey(symbol)) {
+            // only set fallback when a price for symbol is not already present
+            if (!priceMap.containsKey(symbol) && fallbackPrices.containsKey(symbol)) {
                 priceMap.put(symbol, fallbackPrices.get(symbol));
             }
         }
@@ -726,6 +725,40 @@ public class Server {
             System.out.println("Saved users to: " + path.toAbsolutePath());
         } catch (Exception e) {
             System.err.println("Failed to save users: " + e.getMessage());
+        }
+    }
+
+    // DTO for API error responses (serialized by Gson)
+    private static class ErrorResponse {
+        public String message;
+
+        public ErrorResponse(String message) {
+            this.message = message;
+        }
+    }
+
+    // DTO for buying stocks (deserialized by Gson)
+    private static class BuyStockRequest {
+        public String name;
+        public String symbol;
+        public double price;
+        public int quantity;
+    }
+
+    // DTO for login/signup requests (deserialized by Gson)
+    private static class LoginRequest {
+        public String username;
+        public String password;
+    }
+
+    // DTO for login responses (serialized by Gson)
+    private static class LoginResponse {
+        public String token;
+        public String username;
+
+        public LoginResponse(String token, String username) {
+            this.token = token;
+            this.username = username;
         }
     }
 }

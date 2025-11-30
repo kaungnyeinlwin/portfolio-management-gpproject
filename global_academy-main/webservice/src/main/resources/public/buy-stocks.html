@@ -316,7 +316,9 @@
 
     function populateDropdown() {
       const select = document.getElementById("stockSelect");
-      
+      // reset to single default option to avoid duplicates
+      select.innerHTML = '<option value="">Select a stock...</option>';
+
       allStocks.forEach((stock) => {
         const option = document.createElement("option");
         option.value = stock.symbol;
@@ -327,15 +329,15 @@
 
     function filterStocks() {
       const searchTerm = document.getElementById("searchInput").value.toLowerCase();
-      
+
       if (searchTerm === "") {
         displayStocks(allStocks);
         return;
       }
 
       const filtered = allStocks.filter((stock) => {
-        const name = stock.name.toLowerCase();
-        const symbol = stock.symbol.toLowerCase();
+        const name = (stock.name || "").toString().toLowerCase();
+        const symbol = (stock.symbol || "").toString().toLowerCase();
         return name.includes(searchTerm) || symbol.includes(searchTerm);
       });
 
@@ -344,7 +346,7 @@
 
     function selectStock() {
       const selectedSymbol = document.getElementById("stockSelect").value;
-      
+
       if (selectedSymbol === "") {
         displayStocks(allStocks);
         return;
@@ -370,7 +372,7 @@
       const container = document.getElementById("stockContainer");
       container.innerHTML = "";
 
-      if (stocks.length === 0) {
+      if (!stocks || stocks.length === 0) {
         document.getElementById("noResultsMessage").style.display = "block";
         return;
       }
@@ -378,33 +380,77 @@
       document.getElementById("noResultsMessage").style.display = "none";
 
       stocks.forEach((stock) => {
+        // sanitize values
+        const symbol = (stock.symbol || "").toString();
+        const name = (stock.name || "").toString();
+        const price = Number(stock.price) || 0;
+
+        // make a safe id for qty input
+        const safeId = `qty-${symbol.replace(/[^a-zA-Z0-9-_]/g, "_")}`;
+
         const card = document.createElement("div");
         card.className = "stock-card";
-        card.innerHTML = `
-          <div class="stock-header">
-            <div>
-              <h3>${stock.name}</h3>
-              <div class="stock-name">${stock.symbol}</div>
-            </div>
-            <span class="stock-symbol">${stock.symbol}</span>
-          </div>
-          <div class="stock-price">$${parseFloat(stock.price).toFixed(2)}</div>
-          <div class="quantity-selector">
-            <label for="qty-${stock.symbol}">Quantity:</label>
-            <input type="number" id="qty-${stock.symbol}" min="1" value="1" />
-          </div>
-          <button class="buy-btn" onclick="buyStock('${stock.symbol}', '${stock.name}', ${stock.price})">
-            🛒 Buy Stock
-          </button>
-        `;
+
+        const header = document.createElement("div");
+        header.className = "stock-header";
+
+        const left = document.createElement("div");
+        const h3 = document.createElement("h3");
+        h3.textContent = name;
+        const nameDiv = document.createElement("div");
+        nameDiv.className = "stock-name";
+        nameDiv.textContent = symbol;
+
+        left.appendChild(h3);
+        left.appendChild(nameDiv);
+
+        const symbolSpan = document.createElement("span");
+        symbolSpan.className = "stock-symbol";
+        symbolSpan.textContent = symbol;
+
+        header.appendChild(left);
+        header.appendChild(symbolSpan);
+
+        const priceDiv = document.createElement("div");
+        priceDiv.className = "stock-price";
+        priceDiv.textContent = `$${price.toFixed(2)}`;
+
+        const qtySelector = document.createElement("div");
+        qtySelector.className = "quantity-selector";
+
+        const qtyLabel = document.createElement("label");
+        qtyLabel.setAttribute("for", safeId);
+        qtyLabel.textContent = "Quantity:";
+
+        const qtyInput = document.createElement("input");
+        qtyInput.type = "number";
+        qtyInput.id = safeId;
+        qtyInput.min = "1";
+        qtyInput.value = "1";
+
+        qtySelector.appendChild(qtyLabel);
+        qtySelector.appendChild(qtyInput);
+
+        const buyBtn = document.createElement("button");
+        buyBtn.className = "buy-btn";
+        buyBtn.type = "button";
+        buyBtn.textContent = "🛒 Buy Stock";
+
+        buyBtn.addEventListener("click", () => {
+          const qty = parseInt(document.getElementById(safeId).value, 10);
+          buyStockSafe(symbol, name, price, qty);
+        });
+
+        card.appendChild(header);
+        card.appendChild(priceDiv);
+        card.appendChild(qtySelector);
+        card.appendChild(buyBtn);
+
         container.appendChild(card);
       });
     }
 
-    async function buyStock(symbol, name, price) {
-      const quantityInput = document.getElementById(`qty-${symbol}`);
-      const quantity = parseInt(quantityInput.value);
-
+    async function buyStockSafe(symbol, name, price, quantity) {
       if (isNaN(quantity) || quantity < 1) {
         showError("Please enter a valid quantity");
         return;
@@ -428,7 +474,8 @@
         }
 
         if (!response.ok) {
-          throw new Error("Failed to buy stock");
+          const errText = await response.text();
+          throw new Error(errText || "Failed to buy stock");
         }
 
         showSuccess(`Successfully purchased ${quantity} share(s) of ${symbol}!`);
@@ -437,7 +484,7 @@
         }, 1500);
       } catch (error) {
         console.error("Error buying stock:", error);
-        showError("Error purchasing stock: " + error.message);
+        showError("Error purchasing stock: " + (error.message || error));
       }
     }
 
