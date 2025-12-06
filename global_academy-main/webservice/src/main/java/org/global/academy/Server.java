@@ -4,6 +4,7 @@ import static spark.Spark.*;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 import java.nio.file.Files;
@@ -19,7 +20,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Random;
+import java.util.Collections;
 import java.util.stream.Collectors;
 import java.lang.reflect.Type;
 
@@ -27,18 +28,42 @@ public class Server {
     // Key for the session attribute
     private static final String LOGGED_IN_KEY = "isLoggedIn";
     private static final Map<String, Portfolio> userPortfolios = new HashMap<>();
-    private static final String STOCKDATA_API_TOKEN = "S2LH4DIxeG2KYas4RG7O6S1LfotrRvyOIO9njPVp";
-    private static final String STOCKDATA_API_URL = "https://api.stockdata.org/v1/data/quote";
-
-    // NEW: in-memory users loaded from users.json
+    
+    // --- TWELVE DATA CONFIGURATION ---
+    private static final String API_KEY = "949d886fb7d34956a4e435c5c84822b7"; // <--- PASTE KEY HERE
+    private static final String TWELVE_DATA_BASE_URL = "https://api.twelvedata.com";
+    
+    // In-memory users and stocks
     private static final List<User> users = new ArrayList<>();
+    // This list holds the locally cached stock definitions (Symbol + Name)
+    private static final List<StockReference> allAvailableStocks = new ArrayList<>();
+
+    // --- DYNAMIC FALLBACK STORAGE ---
+    // This Map stores the "Last Known Good Price". 
+    // It starts with defaults, but updates every time we get a real API hit.
+    private static final Map<String, Double> lastKnownPrices = new HashMap<>();
+    
+    static {
+        // 1. Initialize with safe defaults (so the app works on very first run)
+        lastKnownPrices.put("AAPL", 190.50);
+        lastKnownPrices.put("MSFT", 425.00);
+        lastKnownPrices.put("GOOGL", 175.00);
+        lastKnownPrices.put("AMZN", 185.00);
+        lastKnownPrices.put("TSLA", 240.00);
+        lastKnownPrices.put("META", 500.00);
+        lastKnownPrices.put("NVDA", 900.00);
+        lastKnownPrices.put("INTC", 30.00);
+        lastKnownPrices.put("AMD", 160.00);
+        lastKnownPrices.put("NFLX", 600.00);
+    }
 
     public static void main(String[] args) {
         port(8080);
         staticFiles.location("/public");
-        // Simple CORS
+        
+        // CORS Setup
         before((request, response) -> {
-            response.header("Access-Control-Allow-Origin", "*"); // or specific origin
+            response.header("Access-Control-Allow-Origin", "*");
             response.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
             response.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
         });
@@ -54,712 +79,417 @@ public class Server {
             return "OK";
         });
 
-        // 1. Declare the variable as final and initialize it immediately.
+        // Load Welcome Page
         final String welcomePageContent;
         try {
-            // Read the content of welcome.html using the classpath (robust approach)
-            // Assuming welcome.html is in src/main/resources/welcome.html
             java.io.InputStream stream = Server.class.getResourceAsStream("/welcome.html");
-            if (stream == null) {
-                // If the file is not found, throw an error to stop server startup.
-                throw new IOException("Resource /welcome.html not found in classpath.");
-            }
+            if (stream == null) throw new IOException("Resource /welcome.html not found");
             welcomePageContent = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         } catch (IOException e) {
-            // If the file cannot be read, log the error and halt the application startup.
             System.err.println("FATAL: Could not read welcome.html content.");
-            e.printStackTrace();
-            // This is cleaner than returning null; it ensures the server doesn't start
-            // without key files.
             return;
         }
 
         Gson gson = new Gson();
 
-        // Resolve holdings file: prefer the classpath resource '/public/holdings.json' when
-        // it's available on the filesystem (during development). If the resource is inside
-        // a jar (not writable) or missing, fall back to a local file './holdings.json'.
-        final Path holdingsFilePath;
-        Path temp = null;
-        try {
-            java.net.URL resourceUrl = Server.class.getResource("/public/holdings.json");
-            if (resourceUrl != null && "file".equals(resourceUrl.getProtocol())) {
-                temp = Paths.get(resourceUrl.toURI());
-            }
-        } catch (Exception e) {
-            System.err.println("Could not resolve classpath holdings.json (URI), will use fallback: " + e.getMessage());
-        }
-        if (temp == null) {
-            temp = Paths.get("holdings.json").toAbsolutePath();
-        }
-        holdingsFilePath = temp;
+        // --- FILE PATH RESOLUTION ---
+        Path dataDir = resolveDataDirectory();
+        
+        final Path holdingsFilePath = dataDir.resolve("holdings.json");
+        final Path usersFilePath = dataDir.resolve("users.json");
+        final Path stocksFilePath = dataDir.resolve("stocks.json");
 
-        // NEW: resolve users.json under the webservice/data folder that lives with this project.
-        Path tmpUsersPath = null;
-        try {
-            // Try to locate the "webservice" project folder by walking ancestors from the class location.
-            Path codeLocation = Paths.get(Server.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            Path start = codeLocation;
-            if (Files.isRegularFile(start)) { // running from a jar
-                start = start.getParent();
-            }
-
-            // Walk up until we find a directory named "webservice"
-            while (start != null && !start.getFileName().toString().equalsIgnoreCase("webservice")) {
-                start = start.getParent();
-            }
-
-            // If not found, fall back to the process working directory (user likely running from project root)
-            if (start == null) {
-                start = Paths.get(System.getProperty("user.dir"));
-            }
-
-            Path dataDir = start.resolve("data");
-
-            // Ensure directory exists
-            if (!Files.exists(dataDir)) {
-                Files.createDirectories(dataDir);
-                System.out.println("Created data directory: " + dataDir.toAbsolutePath());
-            }
-
-            tmpUsersPath = dataDir.resolve("users.json");
-
-            // If users.json doesn't exist, create it and seed a default admin user
-            if (!Files.exists(tmpUsersPath)) {
-                JsonObject root = new JsonObject();
-                JsonArray arr = new JsonArray();
-                JsonObject admin = new JsonObject();
-                admin.addProperty("username", "admin");
-                admin.addProperty("password", "admin");
-                arr.add(admin);
-                root.add("users", arr);
-
-                Files.writeString(tmpUsersPath, gson.toJson(root), java.nio.charset.StandardCharsets.UTF_8,
-                        java.nio.file.StandardOpenOption.CREATE,
-                        java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                System.out.println("Created users file with default admin at: " + tmpUsersPath.toAbsolutePath());
-            }
-
-            // Debug output: absolute path of the users.json being used
-            System.out.println("Using users file: " + tmpUsersPath.toAbsolutePath());
-        } catch (Exception e) {
-            System.err.println("Could not prepare webservice/data/users.json, falling back to ./users.json: " + e.getMessage());
-            tmpUsersPath = Paths.get("users.json");
-        }
-        final Path usersFilePath = tmpUsersPath.toAbsolutePath();
-
-        // Load persisted holdings and users into memory on startup (if any)
+        // --- DATA LOADING ---
         loadAllHoldings(gson, holdingsFilePath);
-        loadAllUsers(gson, usersFilePath); // NEW
+        loadAllUsers(gson, usersFilePath);
+        
+        // Initialize Master Stock List (Reference Data)
+        initializeStockMasterList(gson, stocksFilePath);
 
-        // 2. The route can now safely use the final variable.
-        // Ensure any access to welcome paths requires an active logged-in session
-        before("/welcome", (req, res) -> {
-            Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
-            if (isLoggedIn == null || !isLoggedIn) {
-                res.redirect("/login.html");
-                halt();
-            }
-        });
-        before("/welcome.html", (req, res) -> {
-            Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
-            if (isLoggedIn == null || !isLoggedIn) {
-                res.redirect("/login.html");
-                halt();
-            }
-        });
-        before("/dashboard.html", (req, res) -> {
-            Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
-            if (isLoggedIn == null || !isLoggedIn) {
-                res.redirect("/login.html");
-                halt();
-            }
-        });
-        before("/buy-stocks.html", (req, res) -> {
-            Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
-            if (isLoggedIn == null || !isLoggedIn) {
-                res.redirect("/login.html");
-                halt();
-            }
-        });
-        get("/welcome", (req, res) -> {
-            // filter already enforced session; just return content
-            res.type("text/html");
-            return welcomePageContent;
-        });
+        // --- SECURITY FILTERS ---
+        before("/welcome", (req, res) -> checkLogin(req, res));
+        before("/welcome.html", (req, res) -> checkLogin(req, res));
+        before("/dashboard.html", (req, res) -> checkLogin(req, res));
+        before("/buy-stocks.html", (req, res) -> checkLogin(req, res));
 
-        // Also serve the same secured page at /welcome.html so client redirects to that
-        // path work
-        get("/welcome.html", (req, res) -> {
-            // filter already enforced session; just return content
-            res.type("text/html");
-            return welcomePageContent;
-        });
+        // --- ROUTES ---
 
-        // Logout endpoint: invalidate server session and redirect to login
+        get("/welcome", (req, res) -> { res.type("text/html"); return welcomePageContent; });
+        get("/welcome.html", (req, res) -> { res.type("text/html"); return welcomePageContent; });
+
         get("/logout", (req, res) -> {
-            // Do not create a session if none exists
-            var s = req.session(false);
-            if (s != null) {
-                s.invalidate();
-            }
+            if (req.session(false) != null) req.session().invalidate();
             res.redirect("/login.html");
             return "";
         });
 
-        get("/random", (req, res) -> {
-            res.type("application/json");
-            Random rand = new Random();
-            int randomInt = rand.nextInt(10) + 1; // 1..10
-            return gson.toJson(Map.of("number", randomInt));
-        });
-
-        // Portfolio endpoint: get user's portfolio with current prices and profit/loss
+        // Portfolio endpoint
         get("/api/portfolio", (req, res) -> {
-            Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
-            if (isLoggedIn == null || !isLoggedIn) {
-                res.status(401);
-                res.type("application/json");
-                return gson.toJson(new ErrorResponse("Not logged in"));
-            }
+            if (!isLoggedIn(req)) { res.status(401); return gson.toJson(new ErrorResponse("Not logged in")); }
 
             String username = req.session().attribute("username");
-            Portfolio portfolio = userPortfolios.get(username);
+            Portfolio portfolio = userPortfolios.computeIfAbsent(username, k -> new Portfolio());
 
-            if (portfolio == null) {
-                portfolio = new Portfolio();
-                userPortfolios.put(username, portfolio);
-            }
+            Map<String, Map<String, Object>> aggregatedMap = portfolio.getAggregatedHoldings();
+            List<Map<String, Object>> holdings = new ArrayList<>(aggregatedMap.values());
 
-            // Get aggregated holdings with quantities
-            java.util.Map<String, java.util.Map<String, Object>> aggregatedMap = portfolio.getAggregatedHoldings();
-            java.util.List<java.util.Map<String, Object>> holdings = new java.util.ArrayList<>(aggregatedMap.values());
+            // Get live prices (Attempts Live -> Falls back to Last Known)
+            List<String> symbols = holdings.stream()
+                    .map(h -> h.get("symbol").toString())
+                    .collect(Collectors.toList());
+            
+            Map<String, Double> currentPrices = fetchCurrentPricesTwelveData(symbols);
 
-            // Fetch current prices and enrich holdings with profit/loss
-            Map<String, Double> currentPrices = fetchCurrentPricesBySymbol(
-                    holdings.stream()
-                            .map(h -> h.get("symbol").toString())
-                            .collect(java.util.stream.Collectors.toList())
-                            .toArray(new String[0]));
-
-            for (java.util.Map<String, Object> holding : holdings) {
+            for (Map<String, Object> holding : holdings) {
                 String symbol = holding.get("symbol").toString();
                 double currentPrice = currentPrices.getOrDefault(symbol, ((Number) holding.get("price")).doubleValue());
                 double purchasePrice = ((Number) holding.get("purchasePrice")).doubleValue();
                 int quantity = ((Number) holding.get("quantity")).intValue();
 
                 double gain = (currentPrice - purchasePrice) * quantity;
-                double gainPercent = purchasePrice > 0 ? ((currentPrice - purchasePrice) / purchasePrice) * 100 : 0;
                 double currentValue = currentPrice * quantity;
 
                 holding.put("currentPrice", currentPrice);
                 holding.put("gain", gain);
-                holding.put("gainPercent", gainPercent);
                 holding.put("currentValue", currentValue);
             }
 
-            // Calculate total portfolio value
-            double totalValue = holdings.stream()
-                    .mapToDouble(h -> ((Number) h.get("currentValue")).doubleValue())
-                    .sum();
+            double totalValue = holdings.stream().mapToDouble(h -> ((Number) h.get("currentValue")).doubleValue()).sum();
 
             res.type("application/json");
-            return gson.toJson(Map.of(
-                    "username", username,
-                    "holdings", holdings,
-                    "totalValue", totalValue));
+            return gson.toJson(Map.of("username", username, "holdings", holdings, "totalValue", totalValue));
         });
 
-        // Stocks endpoint: get available stocks to buy with real prices
+        // Search Endpoint
         get("/api/stocks", (req, res) -> {
-            String[] symbols = { "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "INTC", 
-                                 "AMD", "CRM", "ADBE", "NFLX", "PYPL", "IBM", "CSCO", 
-                                 "ORCL", "SAP", "INTU", "SHOP", "UBER" };
-            java.util.List<Map<String, Object>> stocks = fetchRealStockPrices(symbols);
+            String query = req.queryParams("q"); 
+            List<StockReference> results;
+            
+            if (query == null || query.isBlank()) {
+                results = allAvailableStocks.stream()
+                    .filter(s -> List.of("AAPL", "MSFT", "TSLA", "GOOG", "AMZN", "NVDA").contains(s.symbol))
+                    .collect(Collectors.toList());
+            } else {
+                String qLower = query.toLowerCase();
+                results = allAvailableStocks.stream()
+                    .filter(s -> s.symbol.toLowerCase().contains(qLower) || s.name.toLowerCase().contains(qLower))
+                    .limit(20) 
+                    .collect(Collectors.toList());
+            }
+
+            List<String> symbols = results.stream().map(s -> s.symbol).collect(Collectors.toList());
+            Map<String, Double> prices = fetchCurrentPricesTwelveData(symbols);
+            
+            List<Map<String, Object>> responseList = new ArrayList<>();
+            for(StockReference stock : results) {
+                Map<String, Object> map = new HashMap<>();
+                map.put("symbol", stock.symbol);
+                map.put("name", stock.name);
+                
+                Double p = prices.get(stock.symbol);
+                if (p != null) map.put("price", p);
+                else map.put("price", "Unavailable");
+                
+                responseList.add(map);
+            }
 
             res.type("application/json");
-            return gson.toJson(Map.of("stocks", stocks));
+            return gson.toJson(Map.of("stocks", responseList));
         });
 
         // Buy stock endpoint
         post("/api/buy-stock", (req, res) -> {
-            Boolean isLoggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
-            if (isLoggedIn == null || !isLoggedIn) {
-                res.status(401);
-                res.type("application/json");
-                return gson.toJson(new ErrorResponse("Not logged in"));
-            }
+            if (!isLoggedIn(req)) { res.status(401); return gson.toJson(new ErrorResponse("Not logged in")); }
 
             BuyStockRequest buyReq = gson.fromJson(req.body(), BuyStockRequest.class);
             String username = req.session().attribute("username");
-
-            Portfolio portfolio = userPortfolios.get(username);
-            if (portfolio == null) {
-                portfolio = new Portfolio();
-                userPortfolios.put(username, portfolio);
-            }
-
-            // Create and add stock to portfolio
-            Stock newStock = new Stock(buyReq.name, buyReq.symbol, "NASDAQ", buyReq.price);
+            
+            Portfolio portfolio = userPortfolios.computeIfAbsent(username, k -> new Portfolio());
+            Stock newStock = new Stock(buyReq.name, buyReq.symbol, "US", buyReq.price);
             portfolio.addStock(newStock, buyReq.quantity);
-
-            // Persist the updated holdings after purchase
             saveAllHoldings(gson, holdingsFilePath);
 
             res.type("application/json");
             return gson.toJson(Map.of("success", true, "message", "Stock purchased successfully"));
         });
 
-        // NEW: Sign up route - uses usersFilePath and in-memory users list
+        // Sign up
         post("/signup", (req, res) -> {
             try {
                 LoginRequest signup = gson.fromJson(req.body(), LoginRequest.class);
-                if (signup == null || signup.username == null || signup.password == null ||
-                        signup.username.isBlank() || signup.password.isBlank()) {
-                    res.status(400);
-                    return gson.toJson(new ErrorResponse("username and password required"));
-                }
-
                 synchronized (users) {
-                    boolean exists = users.stream().anyMatch(u -> u.getUsername().equals(signup.username));
-                    if (exists) {
-                        res.status(409); // conflict
-                        res.type("application/json");
+                    if (users.stream().anyMatch(u -> u.getUsername().equals(signup.username))) {
+                        res.status(409);
                         return gson.toJson(new ErrorResponse("User already exists"));
                     }
-                    User newUser = new User(signup.username, signup.password);
-                    users.add(newUser);
+                    users.add(new User(signup.username, signup.password));
                     saveAllUsers(gson, usersFilePath);
                 }
-
                 res.status(201);
-                res.type("application/json");
                 return gson.toJson(Map.of("success", true, "message", "User created"));
             } catch (Exception ex) {
                 res.status(500);
-                res.type("application/json");
-                return gson.toJson(new ErrorResponse("Failed to create user"));
+                return gson.toJson(new ErrorResponse("Error creating user"));
             }
         });
 
-        // 3. Update /login route to verify against users list
+        // Login
         post("/login", (req, res) -> {
-            System.out.println("Received /login request with body: " + req.body());
             LoginRequest lr = gson.fromJson(req.body(), LoginRequest.class);
-
             boolean authenticated = false;
             synchronized (users) {
-                for (User u : users) {
-                    if (u.getUsername().equals(lr.username) && u.getPassword().equals(lr.password)) {
-                        authenticated = true;
-                        break;
-                    }
-                }
+                authenticated = users.stream()
+                    .anyMatch(u -> u.getUsername().equals(lr.username) && u.getPassword().equals(lr.password));
             }
 
             if (authenticated) {
-                // *** SUCCESSFUL LOGIN: SET SESSION FLAG ***
                 req.session(true).attribute(LOGGED_IN_KEY, true);
                 req.session().attribute("username", lr.username);
-
-                // Initialize portfolio for user if not exists
-                if (!userPortfolios.containsKey(lr.username)) {
-                    Portfolio portfolio = new Portfolio();
-                    // Start with empty portfolio (0 holdings)
-                    userPortfolios.put(lr.username, portfolio);
-                }
-
-                res.type("application/json");
-                // return token + username
-                return gson.toJson(new LoginResponse("a-fake-token", lr.username));
+                userPortfolios.computeIfAbsent(lr.username, k -> new Portfolio());
+                return gson.toJson(new LoginResponse("token", lr.username));
             } else {
-                // Failed login
                 res.status(401);
-                res.type("application/json");
                 return gson.toJson(new ErrorResponse("Invalid credentials"));
             }
         });
+    }
 
-    } // <-- CLOSE main() HERE (was missing / misplaced)
+    // --- HELPER METHODS ---
+
+    private static void checkLogin(spark.Request req, spark.Response res) {
+        if (!isLoggedIn(req)) {
+            res.redirect("/login.html");
+            halt();
+        }
+    }
+
+    private static boolean isLoggedIn(spark.Request req) {
+        Boolean loggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
+        return loggedIn != null && loggedIn;
+    }
     
-    // Helper method to fetch real stock prices from StockData API
-    private static java.util.List<Map<String, Object>> fetchRealStockPrices(String[] symbols) {
-        java.util.List<Map<String, Object>> stocks = new java.util.ArrayList<>();
+    private static void initializeStockMasterList(Gson gson, Path path) {
+        try {
+            boolean needDownload = true;
+            if (Files.exists(path)) {
+                java.time.Instant lastModified = Files.getLastModifiedTime(path).toInstant();
+                long secondsOld = java.time.Duration.between(lastModified, java.time.Instant.now()).getSeconds();
+                
+                if (secondsOld < (24 * 60 * 60)) {
+                    needDownload = false;
+                    System.out.println("Loading stocks from local file (Cache age: " + secondsOld/3600 + " hours).");
+                    String content = Files.readString(path);
+                    Type listType = new TypeToken<List<StockReference>>() {}.getType();
+                    List<StockReference> loaded = gson.fromJson(content, listType);
+                    if (loaded != null && !loaded.isEmpty()) {
+                        allAvailableStocks.addAll(loaded);
+                        return; 
+                    }
+                } else {
+                    System.out.println("Local stock file is outdated (>24h). Refetching...");
+                }
+            }
+
+            if (needDownload) {
+                System.out.println("Downloading fresh stock list from Twelve Data API...");
+                String url = TWELVE_DATA_BASE_URL + "/stocks?country=United%20States&exchange=NASDAQ&type=Common%20Stock";
+                HttpClient client = HttpClient.newHttpClient();
+                HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                
+                if (response.statusCode() == 200) {
+                    JsonObject json = gson.fromJson(response.body(), JsonObject.class);
+                    if (json.has("data")) {
+                        JsonArray data = json.getAsJsonArray("data");
+                        List<StockReference> fetchedStocks = new ArrayList<>();
+                        for (JsonElement el : data) {
+                            JsonObject obj = el.getAsJsonObject();
+                            fetchedStocks.add(new StockReference(obj.get("symbol").getAsString(), obj.get("name").getAsString()));
+                        }
+                        allAvailableStocks.clear();
+                        allAvailableStocks.addAll(fetchedStocks);
+                        Files.writeString(path, gson.toJson(allAvailableStocks));
+                        System.out.println("Downloaded and saved " + fetchedStocks.size() + " stocks.");
+                    }
+                } else {
+                    System.err.println("Failed to download stock list. API Status: " + response.statusCode());
+                    if (Files.exists(path)) {
+                         String content = Files.readString(path);
+                         Type listType = new TypeToken<List<StockReference>>() {}.getType();
+                         List<StockReference> loaded = gson.fromJson(content, listType);
+                         if (loaded != null) allAvailableStocks.addAll(loaded);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error initializing stock list: " + e.getMessage());
+        }
+    }
+
+    // ** STRATEGY: Try Live -> Update Memory -> If Fail, Use Memory **
+    private static Map<String, Double> fetchCurrentPricesTwelveData(List<String> symbols) {
+        Map<String, Double> results = new HashMap<>();
+        if (symbols == null || symbols.isEmpty()) return results;
+        
+        List<String> validSymbols = symbols.stream().filter(s -> s != null && !s.isEmpty()).collect(Collectors.toList());
+        if (validSymbols.isEmpty()) return results;
 
         try {
-            String symbolsParam = String.join(",", symbols);
-            String url = STOCKDATA_API_URL + "?symbols=" + symbolsParam + "&api_token=" + STOCKDATA_API_TOKEN;
+            // 1. Attempt to fetch LIVE data
+            String symbolsParam = String.join(",", validSymbols);
+            String url = TWELVE_DATA_BASE_URL + "/price?symbol=" + symbolsParam + "&apikey=" + API_KEY;
 
-            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
-            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                    .uri(java.net.URI.create(url))
-                    .GET()
-                    .build();
-
-            java.net.http.HttpResponse<String> response = client.send(request,
-                    java.net.http.HttpResponse.BodyHandlers.ofString());
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            
+            boolean apiCallSuccess = false;
 
             if (response.statusCode() == 200) {
                 Gson gson = new Gson();
-                JsonObject jsonResponse = gson.fromJson(response.body(), JsonObject.class);
+                JsonObject json = gson.fromJson(response.body(), JsonObject.class);
 
-                if (jsonResponse.has("data") && jsonResponse.get("data").isJsonArray()) {
-                    JsonArray dataArray = jsonResponse.getAsJsonArray("data");
-
-                    // build map of returned symbols -> stockData
-                    Map<String, Map<String, Object>> returned = new HashMap<>();
-                    for (int i = 0; i < dataArray.size(); i++) {
-                        JsonObject stock = dataArray.get(i).getAsJsonObject();
-
-                        Map<String, Object> stockData = new HashMap<>();
-                        String ticker = stock.has("ticker") ? stock.get("ticker").getAsString() : null;
-                        stockData.put("symbol", ticker);
-                        stockData.put("name", stock.has("name") ? stock.get("name").getAsString() : ticker);
-                        stockData.put("price", stock.has("price") ? stock.get("price").getAsDouble() : 0.0);
-
-                        if (ticker != null) {
-                            returned.put(ticker, stockData);
+                // Check for Limit Reached
+                if (json.has("code") && json.get("code").getAsInt() != 200) {
+                    System.err.println("⚠️ API Error (Limit or Invalid): " + json.get("message").getAsString());
+                    // Flag false so we drop to fallback below
+                    apiCallSuccess = false; 
+                } else {
+                    apiCallSuccess = true;
+                    // PARSE & UPDATE MEMORY
+                    if (validSymbols.size() == 1) {
+                        if (json.has("price")) {
+                            double p = json.get("price").getAsDouble();
+                            lastKnownPrices.put(validSymbols.get(0), p); // <--- UPDATE MEMORY
+                            results.put(validSymbols.get(0), p);
                         }
-                    }
-
-                    // ensure we return an entry for every requested symbol by filling missing from fallback
-                    Map<String, Map<String, Object>> fallbackMap = new HashMap<>();
-                    for (Map<String, Object> f : getFallbackStockData()) {
-                        fallbackMap.put(f.get("symbol").toString(), f);
-                    }
-
-                    for (String sym : symbols) {
-                        if (returned.containsKey(sym)) {
-                            stocks.add(returned.get(sym));
-                        } else if (fallbackMap.containsKey(sym)) {
-                            stocks.add(fallbackMap.get(sym));
-                        } else {
-                            // Generic placeholder if symbol not found anywhere
-                            Map<String, Object> placeholder = new HashMap<>();
-                            placeholder.put("symbol", sym);
-                            placeholder.put("name", sym);
-                            placeholder.put("price", 0.0);
-                            stocks.add(placeholder);
+                    } else {
+                        for (String sym : validSymbols) {
+                            if (json.has(sym)) {
+                                JsonObject stockObj = json.getAsJsonObject(sym);
+                                if (stockObj.has("price")) {
+                                    double p = stockObj.get("price").getAsDouble();
+                                    lastKnownPrices.put(sym, p); // <--- UPDATE MEMORY
+                                    results.put(sym, p);
+                                }
+                            }
                         }
                     }
                 }
             } else {
-                // Fallback to sample data if API call fails
-                stocks = getFallbackStockData();
+                System.err.println("⚠️ HTTP Error " + response.statusCode());
             }
-        } catch (Exception e) {
-            System.err.println("Error fetching stock prices: " + e.getMessage());
-            // Fallback to sample data if there's any error
-            stocks = getFallbackStockData();
-        }
 
-        return stocks;
-    }
-
-    // Fetch current prices for a list of symbols and return as a map
-    private static Map<String, Double> fetchCurrentPricesBySymbol(String[] symbols) {
-        Map<String, Double> priceMap = new HashMap<>();
-
-        if (symbols == null || symbols.length == 0) {
-            return priceMap;
-        }
-
-        try {
-            String symbolsParam = String.join(",", symbols);
-            String url = STOCKDATA_API_URL + "?symbols=" + symbolsParam + "&api_token=" + STOCKDATA_API_TOKEN;
-
-            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
-            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                    .uri(java.net.URI.create(url))
-                    .GET()
-                    .build();
-
-            java.net.http.HttpResponse<String> response = client.send(request,
-                    java.net.http.HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() == 200) {
-                Gson gson = new Gson();
-                JsonObject jsonResponse = gson.fromJson(response.body(), JsonObject.class);
-
-                if (jsonResponse.has("data") && jsonResponse.get("data").isJsonArray()) {
-                    JsonArray dataArray = jsonResponse.getAsJsonArray("data");
-
-                    for (int i = 0; i < dataArray.size(); i++) {
-                        JsonObject stock = dataArray.get(i).getAsJsonObject();
-                        String symbol = stock.get("ticker").getAsString();
-                        double price = stock.get("price").getAsDouble();
-                        priceMap.put(symbol, price);
+            // 2. FALLBACK LOGIC
+            // If the API call failed (or missed some symbols), fill gaps using "lastKnownPrices"
+            for (String sym : validSymbols) {
+                if (!results.containsKey(sym)) {
+                    if (lastKnownPrices.containsKey(sym)) {
+                        // System.out.println("Using cached/fallback price for: " + sym);
+                        results.put(sym, lastKnownPrices.get(sym));
+                    } else {
+                        // Truly unknown stock (never seen before, API failed)
+                        results.put(sym, 0.0);
                     }
                 }
-            } else {
-                // Fallback: use sample prices if API fails
-                populateFallbackPrices(priceMap, symbols);
             }
+
         } catch (Exception e) {
-            System.err.println("Error fetching current prices: " + e.getMessage());
-            // Fallback: use sample prices if there's any error
-            populateFallbackPrices(priceMap, symbols);
-        }
-
-        // Ensure any missing symbols get a fallback price (don't overwrite existing)
-        populateFallbackPrices(priceMap, symbols);
-
-        return priceMap;
-    }
-
-    // Populate price map with fallback prices
-    private static void populateFallbackPrices(Map<String, Double> priceMap, String[] symbols) {
-        Map<String, Double> fallbackPrices = new HashMap<>();
-        fallbackPrices.put("AAPL", 190.0);
-        fallbackPrices.put("MSFT", 420.0);
-        fallbackPrices.put("GOOGL", 140.0);
-        fallbackPrices.put("AMZN", 180.0);
-        fallbackPrices.put("TSLA", 250.0);
-        fallbackPrices.put("META", 480.0);
-        fallbackPrices.put("NVDA", 875.0);
-        fallbackPrices.put("INTC", 45.0);
-        fallbackPrices.put("AMD", 150.0);
-        fallbackPrices.put("CRM", 210.0);
-        fallbackPrices.put("ADBE", 520.0);
-        fallbackPrices.put("NFLX", 250.0);
-        fallbackPrices.put("PYPL", 95.0);
-        fallbackPrices.put("IBM", 180.0);
-        fallbackPrices.put("CSCO", 48.0);
-        fallbackPrices.put("ORCL", 140.0);
-        fallbackPrices.put("SAP", 110.0);
-        fallbackPrices.put("INTU", 580.0);
-        fallbackPrices.put("SHOP", 720.0);
-        fallbackPrices.put("UBER", 75.0);
-
-        for (String symbol : symbols) {
-            // only set fallback when a price for symbol is not already present
-            if (!priceMap.containsKey(symbol) && fallbackPrices.containsKey(symbol)) {
-                priceMap.put(symbol, fallbackPrices.get(symbol));
+            System.err.println("Error fetching prices: " + e.getMessage());
+            // Total failure? Return everything from memory
+            for (String sym : validSymbols) {
+                 results.put(sym, lastKnownPrices.getOrDefault(sym, 0.0));
             }
         }
+        
+        return results;
     }
 
-    // Fallback method if API call fails
-    private static java.util.List<Map<String, Object>> getFallbackStockData() {
-        java.util.List<Map<String, Object>> stocks = new java.util.ArrayList<>();
-        Stock[] availableStocks = {
-                new Stock("Apple", "AAPL", "NASDAQ", 190.0),
-                new Stock("Microsoft", "MSFT", "NASDAQ", 420.0),
-                new Stock("Google", "GOOGL", "NASDAQ", 140.0),
-                new Stock("Amazon", "AMZN", "NASDAQ", 180.0),
-                new Stock("Tesla", "TSLA", "NASDAQ", 250.0),
-                new Stock("Meta", "META", "NASDAQ", 480.0),
-                new Stock("Nvidia", "NVDA", "NASDAQ", 875.0),
-                new Stock("Intel", "INTC", "NASDAQ", 45.0),
-                new Stock("AMD", "AMD", "NASDAQ", 150.0),
-                new Stock("Salesforce", "CRM", "NYSE", 210.0),
-                new Stock("Adobe", "ADBE", "NASDAQ", 520.0),
-                new Stock("Netflix", "NFLX", "NASDAQ", 250.0),
-                new Stock("PayPal", "PYPL", "NASDAQ", 95.0),
-                new Stock("IBM", "IBM", "NYSE", 180.0),
-                new Stock("Cisco", "CSCO", "NASDAQ", 48.0),
-                new Stock("Oracle", "ORCL", "NYSE", 140.0),
-                new Stock("SAP", "SAP", "NYSE", 110.0),
-                new Stock("Intuit", "INTU", "NASDAQ", 580.0),
-                new Stock("Shopify", "SHOP", "NYSE", 720.0),
-                new Stock("Uber", "UBER", "NYSE", 75.0)
-        };
-
-        for (Stock stock : availableStocks) {
-            Map<String, Object> stockData = new HashMap<>();
-            stockData.put("symbol", stock.getSymbol());
-            stockData.put("name", stock.getCompanyName());
-            stockData.put("price", stock.getPrice());
-            stocks.add(stockData);
+    private static Path resolveDataDirectory() {
+        try {
+            Path location = Paths.get(Server.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            if (Files.isRegularFile(location)) location = location.getParent();
+            Path current = location;
+            while (current != null && !current.getFileName().toString().equalsIgnoreCase("webservice")) {
+                current = current.getParent();
+            }
+            if (current == null) current = Paths.get(System.getProperty("user.dir"));
+            Path dataDir = current.resolve("data");
+            if (!Files.exists(dataDir)) Files.createDirectories(dataDir);
+            return dataDir;
+        } catch (Exception e) {
+            return Paths.get("data"); 
         }
-
-        return stocks;
     }
 
-    // Load holdings from a JSON file into in-memory portfolios
     private static void loadAllHoldings(Gson gson, Path path) {
+        if (!Files.exists(path)) return;
         try {
-            if (!Files.exists(path)) {
-                // Create an initial empty structure
-                JsonObject root = new JsonObject();
-                root.add("holdings", new JsonObject());
-                root.addProperty("lastUpdate", "");
-                Files.writeString(path, gson.toJson(root), java.nio.charset.StandardCharsets.UTF_8,
-                        java.nio.file.StandardOpenOption.CREATE,
-                        java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                System.out.println("Created new holdings file at: " + path.toAbsolutePath());
-                return;
-            }
-
-            String content = Files.readString(path, java.nio.charset.StandardCharsets.UTF_8);
-            if (content == null || content.isBlank()) {
-                return;
-            }
-
-            JsonObject root = gson.fromJson(content, JsonObject.class);
-            if (root == null || !root.has("holdings") || !root.get("holdings").isJsonObject()) {
-                return;
-            }
-
-            JsonObject holdingsObj = root.getAsJsonObject("holdings");
-            for (var entry : holdingsObj.entrySet()) {
-                String username = entry.getKey();
-                var jsonElement = entry.getValue();
-                if (!jsonElement.isJsonArray()) continue;
-
-                java.util.Iterator<com.google.gson.JsonElement> iter = jsonElement.getAsJsonArray().iterator();
-                Portfolio p = new Portfolio();
-
-                while (iter.hasNext()) {
-                    JsonObject h = iter.next().getAsJsonObject();
-                    String symbol = h.has("symbol") ? h.get("symbol").getAsString() : "";
-                    String name = h.has("name") ? h.get("name").getAsString() : "";
-                    double price = h.has("price") ? h.get("price").getAsDouble() : 0.0;
-                    double purchasePrice = h.has("purchasePrice") ? h.get("purchasePrice").getAsDouble() : price;
-                    int quantity = h.has("quantity") ? h.get("quantity").getAsInt() : 1;
-
-                    Stock s = new Stock(name, symbol, "NASDAQ", price);
-                    s.setPurchasePrice(purchasePrice);
-                    p.addStock(s, quantity);
+            JsonObject root = gson.fromJson(Files.readString(path), JsonObject.class);
+            if (root != null && root.has("holdings")) {
+                JsonObject holdingsObj = root.getAsJsonObject("holdings");
+                for (String username : holdingsObj.keySet()) {
+                    Portfolio p = new Portfolio();
+                    for (JsonElement e : holdingsObj.getAsJsonArray(username)) {
+                        JsonObject h = e.getAsJsonObject();
+                        Stock s = new Stock(h.get("name").getAsString(), h.get("symbol").getAsString(), "US", h.get("price").getAsDouble());
+                        if (h.has("purchasePrice")) s.setPurchasePrice(h.get("purchasePrice").getAsDouble());
+                        p.addStock(s, h.get("quantity").getAsInt());
+                    }
+                    userPortfolios.put(username, p);
                 }
-
-                userPortfolios.put(username, p);
             }
-
-            System.out.println("Loaded holdings from: " + path.toAbsolutePath());
-        } catch (Exception e) {
-            System.err.println("Failed to load holdings: " + e.getMessage());
-        }
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // Save current in-memory portfolios to the JSON file
     private static void saveAllHoldings(Gson gson, Path path) {
         try {
             JsonObject root = new JsonObject();
             JsonObject holdingsObj = new JsonObject();
-
             for (var entry : userPortfolios.entrySet()) {
-                String username = entry.getKey();
-                Portfolio p = entry.getValue();
-                java.util.Map<String, java.util.Map<String, Object>> agg = p.getAggregatedHoldings();
-
                 JsonArray arr = new JsonArray();
-                for (var data : agg.values()) {
-                    JsonObject ho = new JsonObject();
-                    if (data.get("symbol") != null)
-                        ho.addProperty("symbol", data.get("symbol").toString());
-                    if (data.get("name") != null)
-                        ho.addProperty("name", data.get("name").toString());
-                    if (data.get("quantity") != null)
-                        ho.addProperty("quantity", ((Number) data.get("quantity")).intValue());
-                    if (data.get("price") != null)
-                        ho.addProperty("price", ((Number) data.get("price")).doubleValue());
-                    if (data.get("purchasePrice") != null)
-                        ho.addProperty("purchasePrice", ((Number) data.get("purchasePrice")).doubleValue());
-                    if (data.get("totalPrice") != null)
-                        ho.addProperty("totalPrice", ((Number) data.get("totalPrice")).doubleValue());
-                    if (data.get("totalPurchasePrice") != null)
-                        ho.addProperty("totalPurchasePrice", ((Number) data.get("totalPurchasePrice")).doubleValue());
-
+                for (var data : entry.getValue().getAggregatedHoldings().values()) {
+                    JsonObject ho = gson.toJsonTree(data).getAsJsonObject();
                     arr.add(ho);
                 }
-
-                holdingsObj.add(username, arr);
+                holdingsObj.add(entry.getKey(), arr);
             }
-
             root.add("holdings", holdingsObj);
-            root.addProperty("lastUpdate", java.time.Instant.now().toString());
-
-            Files.writeString(path, gson.toJson(root), java.nio.charset.StandardCharsets.UTF_8,
-                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-
-            System.out.println("Saved holdings to: " + path.toAbsolutePath());
-        } catch (Exception e) {
-            System.err.println("Failed to save holdings: " + e.getMessage());
-        }
+            Files.writeString(path, gson.toJson(root));
+        } catch (Exception e) { e.printStackTrace(); }
     }
-
-    // NEW: load users.json -> populate users list
+    
     private static void loadAllUsers(Gson gson, Path path) {
+        if (!Files.exists(path)) return;
         try {
-            if (!Files.exists(path)) {
-                // create empty users structure
-                JsonObject root = new JsonObject();
-                root.add("users", new JsonArray());
-                Files.writeString(path, gson.toJson(root), java.nio.charset.StandardCharsets.UTF_8,
-                        java.nio.file.StandardOpenOption.CREATE,
-                        java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-                System.out.println("Created new users file at: " + path.toAbsolutePath());
-                return;
+            JsonObject root = gson.fromJson(Files.readString(path), JsonObject.class);
+            if (root != null && root.has("users")) {
+                List<User> loaded = gson.fromJson(root.get("users"), new TypeToken<List<User>>(){}.getType());
+                users.addAll(loaded);
             }
-
-            String content = Files.readString(path, java.nio.charset.StandardCharsets.UTF_8);
-            if (content == null || content.isBlank()) return;
-
-            JsonObject root = gson.fromJson(content, JsonObject.class);
-            if (root == null || !root.has("users") || !root.get("users").isJsonArray()) return;
-
-            JsonArray arr = root.getAsJsonArray("users");
-            Type userListType = new TypeToken<List<User>>() {}.getType();
-            List<User> loaded = gson.fromJson(arr, userListType);
-            if (loaded != null) {
-                synchronized (users) {
-                    users.clear();
-                    users.addAll(loaded);
-                }
-            }
-            System.out.println("Loaded users from: " + path.toAbsolutePath());
-        } catch (Exception e) {
-            System.err.println("Failed to load users: " + e.getMessage());
-        }
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // NEW: save current users list to users.json
     private static void saveAllUsers(Gson gson, Path path) {
         try {
             JsonObject root = new JsonObject();
-            JsonArray arr = (JsonArray) gson.toJsonTree(users);
-            root.add("users", arr);
-            Files.writeString(path, gson.toJson(root), java.nio.charset.StandardCharsets.UTF_8,
-                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-            System.out.println("Saved users to: " + path.toAbsolutePath());
-        } catch (Exception e) {
-            System.err.println("Failed to save users: " + e.getMessage());
-        }
+            root.add("users", gson.toJsonTree(users));
+            Files.writeString(path, gson.toJson(root));
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // DTO for API error responses (serialized by Gson)
+    // --- DTO CLASSES ---
+
+    private static class StockReference {
+        String symbol;
+        String name;
+        public StockReference(String symbol, String name) { this.symbol = symbol; this.name = name; }
+    }
     private static class ErrorResponse {
         public String message;
-
-        public ErrorResponse(String message) {
-            this.message = message;
-        }
+        public ErrorResponse(String m) { this.message = m; }
     }
-
-    // DTO for buying stocks (deserialized by Gson)
-    private static class BuyStockRequest {
-        public String name;
-        public String symbol;
-        public double price;
-        public int quantity;
-    }
-
-    // DTO for login/signup requests (deserialized by Gson)
-    private static class LoginRequest {
-        public String username;
-        public String password;
-    }
-
-    // DTO for login responses (serialized by Gson)
-    private static class LoginResponse {
-        public String token;
-        public String username;
-
-        public LoginResponse(String token, String username) {
-            this.token = token;
-            this.username = username;
-        }
-    }
+    private static class BuyStockRequest { public String name; public String symbol; public double price; public int quantity; }
+    private static class LoginRequest { public String username; public String password; }
+    private static class LoginResponse { public String token; public String username; public LoginResponse(String t, String u) { token=t; username=u; }}
 }
-
