@@ -220,6 +220,10 @@
             <h3>Portfolio Value</h3>
             <div class="value" id="portfolioValue">$0.00</div>
           </div>
+          <div class="stat-card">
+            <h3>Total Profit/Loss</h3>
+            <div class="value" id="totalProfitLoss">$0.00</div>
+          </div>
         </div>
 
         <div id="holdingsTableContainer">
@@ -301,6 +305,13 @@
       // Update stats
       document.getElementById("holdingsCount").textContent = holdings.length;
       document.getElementById("portfolioValue").textContent = `$${totalValue}`;
+
+      // Total profit/loss (from backend)
+      const totalGain = parseFloat(data.totalGain || 0);
+      const totalGainFixed = totalGain.toFixed(2);
+      const totalGainSign = totalGain >= 0 ? '+' : '';
+      const totalGainEl = document.getElementById('totalProfitLoss');
+      totalGainEl.textContent = `${totalGainSign}$${totalGainFixed}`;
 
       // Display holdings table
       const tableBody = document.getElementById("holdingsTableBody");

@@ -28,21 +28,21 @@ public class Server {
     // Key for the session attribute
     private static final String LOGGED_IN_KEY = "isLoggedIn";
     private static final Map<String, Portfolio> userPortfolios = new HashMap<>();
-    
+
     // --- TWELVE DATA CONFIGURATION ---
-    private static final String API_KEY = "949d886fb7d34956a4e435c5c84822b7"; 
+    private static final String API_KEY = "949d886fb7d34956a4e435c5c84822b7";
     private static final String TWELVE_DATA_BASE_URL = "https://api.twelvedata.com";
-    
+
     // In-memory users and stocks
     private static final List<User> users = new ArrayList<>();
     // This list holds the locally cached stock definitions (Symbol + Name)
     private static final List<StockReference> allAvailableStocks = new ArrayList<>();
 
     // --- DYNAMIC FALLBACK STORAGE ---
-    // This Map stores the "Last Known Good Price". 
+    // This Map stores the "Last Known Good Price".
     // It starts with defaults, but updates every time we get a real API hit.
     private static final Map<String, Double> lastKnownPrices = new HashMap<>();
-    
+
     static {
         // 1. Initialize with safe defaults (so the app works on very first run)
         lastKnownPrices.put("AAPL", 190.50);
@@ -60,7 +60,7 @@ public class Server {
     public static void main(String[] args) {
         port(8080);
         staticFiles.location("/public");
-        
+
         // CORS Setup
         before((request, response) -> {
             response.header("Access-Control-Allow-Origin", "*");
@@ -83,7 +83,8 @@ public class Server {
         final String welcomePageContent;
         try {
             java.io.InputStream stream = Server.class.getResourceAsStream("/welcome.html");
-            if (stream == null) throw new IOException("Resource /welcome.html not found");
+            if (stream == null)
+                throw new IOException("Resource /welcome.html not found");
             welcomePageContent = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         } catch (IOException e) {
             System.err.println("FATAL: Could not read welcome.html content.");
@@ -94,7 +95,7 @@ public class Server {
 
         // --- FILE PATH RESOLUTION ---
         Path dataDir = resolveDataDirectory();
-        
+
         final Path holdingsFilePath = dataDir.resolve("holdings.json");
         final Path usersFilePath = dataDir.resolve("users.json");
         final Path stocksFilePath = dataDir.resolve("stocks.json");
@@ -102,7 +103,7 @@ public class Server {
         // --- DATA LOADING ---
         loadAllHoldings(gson, holdingsFilePath);
         loadAllUsers(gson, usersFilePath);
-        
+
         // Initialize Master Stock List (Reference Data)
         initializeStockMasterList(gson, stocksFilePath);
 
@@ -114,18 +115,28 @@ public class Server {
 
         // --- ROUTES ---
 
-        get("/welcome", (req, res) -> { res.type("text/html"); return welcomePageContent; });
-        get("/welcome.html", (req, res) -> { res.type("text/html"); return welcomePageContent; });
+        get("/welcome", (req, res) -> {
+            res.type("text/html");
+            return welcomePageContent;
+        });
+        get("/welcome.html", (req, res) -> {
+            res.type("text/html");
+            return welcomePageContent;
+        });
 
         get("/logout", (req, res) -> {
-            if (req.session(false) != null) req.session().invalidate();
+            if (req.session(false) != null)
+                req.session().invalidate();
             res.redirect("/login.html");
             return "";
         });
 
         // Portfolio endpoint
         get("/api/portfolio", (req, res) -> {
-            if (!isLoggedIn(req)) { res.status(401); return gson.toJson(new ErrorResponse("Not logged in")); }
+            if (!isLoggedIn(req)) {
+                res.status(401);
+                return gson.toJson(new ErrorResponse("Not logged in"));
+            }
 
             String username = req.session().attribute("username");
             Portfolio portfolio = userPortfolios.computeIfAbsent(username, k -> new Portfolio());
@@ -137,7 +148,7 @@ public class Server {
             List<String> symbols = holdings.stream()
                     .map(h -> h.get("symbol").toString())
                     .collect(Collectors.toList());
-            
+
             Map<String, Double> currentPrices = fetchCurrentPricesTwelveData(symbols);
 
             for (Map<String, Object> holding : holdings) {
@@ -154,42 +165,50 @@ public class Server {
                 holding.put("currentValue", currentValue);
             }
 
-            double totalValue = holdings.stream().mapToDouble(h -> ((Number) h.get("currentValue")).doubleValue()).sum();
+            double totalValue = holdings.stream().mapToDouble(h -> ((Number) h.get("currentValue")).doubleValue())
+                    .sum();
+            double totalGain = holdings.stream().mapToDouble(h -> ((Number) h.get("gain")).doubleValue()).sum();
 
             res.type("application/json");
-            return gson.toJson(Map.of("username", username, "holdings", holdings, "totalValue", totalValue));
+            return gson.toJson(Map.of(
+                    "username", username,
+                    "holdings", holdings,
+                    "totalValue", totalValue,
+                    "totalGain", totalGain));
         });
 
         // Search Endpoint
         get("/api/stocks", (req, res) -> {
-            String query = req.queryParams("q"); 
+            String query = req.queryParams("q");
             List<StockReference> results;
-            
+
             if (query == null || query.isBlank()) {
                 results = allAvailableStocks.stream()
-                    .filter(s -> List.of("AAPL", "MSFT", "TSLA", "GOOG", "AMZN", "NVDA").contains(s.symbol))
-                    .collect(Collectors.toList());
+                        .filter(s -> List.of("AAPL", "MSFT", "TSLA", "GOOG", "AMZN", "NVDA").contains(s.symbol))
+                        .collect(Collectors.toList());
             } else {
                 String qLower = query.toLowerCase();
                 results = allAvailableStocks.stream()
-                    .filter(s -> s.symbol.toLowerCase().contains(qLower) || s.name.toLowerCase().contains(qLower))
-                    .limit(20) 
-                    .collect(Collectors.toList());
+                        .filter(s -> s.symbol.toLowerCase().contains(qLower) || s.name.toLowerCase().contains(qLower))
+                        .limit(20)
+                        .collect(Collectors.toList());
             }
 
             List<String> symbols = results.stream().map(s -> s.symbol).collect(Collectors.toList());
             Map<String, Double> prices = fetchCurrentPricesTwelveData(symbols);
-            
+
             List<Map<String, Object>> responseList = new ArrayList<>();
-            for(StockReference stock : results) {
+            for (StockReference stock : results) {
                 Map<String, Object> map = new HashMap<>();
                 map.put("symbol", stock.symbol);
                 map.put("name", stock.name);
-                
+
                 Double p = prices.get(stock.symbol);
-                if (p != null) map.put("price", p);
-                else map.put("price", "Unavailable");
-                
+                if (p != null)
+                    map.put("price", p);
+                else
+                    map.put("price", "Unavailable");
+
                 responseList.add(map);
             }
 
@@ -199,11 +218,14 @@ public class Server {
 
         // Buy stock endpoint
         post("/api/buy-stock", (req, res) -> {
-            if (!isLoggedIn(req)) { res.status(401); return gson.toJson(new ErrorResponse("Not logged in")); }
+            if (!isLoggedIn(req)) {
+                res.status(401);
+                return gson.toJson(new ErrorResponse("Not logged in"));
+            }
 
             BuyStockRequest buyReq = gson.fromJson(req.body(), BuyStockRequest.class);
             String username = req.session().attribute("username");
-            
+
             Portfolio portfolio = userPortfolios.computeIfAbsent(username, k -> new Portfolio());
             Stock newStock = new Stock(buyReq.name, buyReq.symbol, "US", buyReq.price);
             portfolio.addStock(newStock, buyReq.quantity);
@@ -239,7 +261,7 @@ public class Server {
             boolean authenticated = false;
             synchronized (users) {
                 authenticated = users.stream()
-                    .anyMatch(u -> u.getUsername().equals(lr.username) && u.getPassword().equals(lr.password));
+                        .anyMatch(u -> u.getUsername().equals(lr.username) && u.getPassword().equals(lr.password));
             }
 
             if (authenticated) {
@@ -267,23 +289,24 @@ public class Server {
         Boolean loggedIn = req.session(false) == null ? null : req.session().attribute(LOGGED_IN_KEY);
         return loggedIn != null && loggedIn;
     }
-    
+
     private static void initializeStockMasterList(Gson gson, Path path) {
         try {
             boolean needDownload = true;
             if (Files.exists(path)) {
                 java.time.Instant lastModified = Files.getLastModifiedTime(path).toInstant();
                 long secondsOld = java.time.Duration.between(lastModified, java.time.Instant.now()).getSeconds();
-                
+
                 if (secondsOld < (24 * 60 * 60)) {
                     needDownload = false;
-                    System.out.println("Loading stocks from local file (Cache age: " + secondsOld/3600 + " hours).");
+                    System.out.println("Loading stocks from local file (Cache age: " + secondsOld / 3600 + " hours).");
                     String content = Files.readString(path);
-                    Type listType = new TypeToken<List<StockReference>>() {}.getType();
+                    Type listType = new TypeToken<List<StockReference>>() {
+                    }.getType();
                     List<StockReference> loaded = gson.fromJson(content, listType);
                     if (loaded != null && !loaded.isEmpty()) {
                         allAvailableStocks.addAll(loaded);
-                        return; 
+                        return;
                     }
                 } else {
                     System.out.println("Local stock file is outdated (>24h). Refetching...");
@@ -292,11 +315,12 @@ public class Server {
 
             if (needDownload) {
                 System.out.println("Downloading fresh stock list from Twelve Data API...");
-                String url = TWELVE_DATA_BASE_URL + "/stocks?country=United%20States&exchange=NASDAQ&type=Common%20Stock";
+                String url = TWELVE_DATA_BASE_URL
+                        + "/stocks?country=United%20States&exchange=NASDAQ&type=Common%20Stock";
                 HttpClient client = HttpClient.newHttpClient();
                 HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
                 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-                
+
                 if (response.statusCode() == 200) {
                     JsonObject json = gson.fromJson(response.body(), JsonObject.class);
                     if (json.has("data")) {
@@ -304,7 +328,8 @@ public class Server {
                         List<StockReference> fetchedStocks = new ArrayList<>();
                         for (JsonElement el : data) {
                             JsonObject obj = el.getAsJsonObject();
-                            fetchedStocks.add(new StockReference(obj.get("symbol").getAsString(), obj.get("name").getAsString()));
+                            fetchedStocks.add(
+                                    new StockReference(obj.get("symbol").getAsString(), obj.get("name").getAsString()));
                         }
                         allAvailableStocks.clear();
                         allAvailableStocks.addAll(fetchedStocks);
@@ -314,10 +339,12 @@ public class Server {
                 } else {
                     System.err.println("Failed to download stock list. API Status: " + response.statusCode());
                     if (Files.exists(path)) {
-                         String content = Files.readString(path);
-                         Type listType = new TypeToken<List<StockReference>>() {}.getType();
-                         List<StockReference> loaded = gson.fromJson(content, listType);
-                         if (loaded != null) allAvailableStocks.addAll(loaded);
+                        String content = Files.readString(path);
+                        Type listType = new TypeToken<List<StockReference>>() {
+                        }.getType();
+                        List<StockReference> loaded = gson.fromJson(content, listType);
+                        if (loaded != null)
+                            allAvailableStocks.addAll(loaded);
                     }
                 }
             }
@@ -329,10 +356,13 @@ public class Server {
     // ** STRATEGY: Try Live -> Update Memory -> If Fail, Use Memory **
     private static Map<String, Double> fetchCurrentPricesTwelveData(List<String> symbols) {
         Map<String, Double> results = new HashMap<>();
-        if (symbols == null || symbols.isEmpty()) return results;
-        
-        List<String> validSymbols = symbols.stream().filter(s -> s != null && !s.isEmpty()).collect(Collectors.toList());
-        if (validSymbols.isEmpty()) return results;
+        if (symbols == null || symbols.isEmpty())
+            return results;
+
+        List<String> validSymbols = symbols.stream().filter(s -> s != null && !s.isEmpty())
+                .collect(Collectors.toList());
+        if (validSymbols.isEmpty())
+            return results;
 
         try {
             // 1. Attempt to fetch LIVE data
@@ -342,7 +372,7 @@ public class Server {
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            
+
             boolean apiCallSuccess = false;
 
             if (response.statusCode() == 200) {
@@ -353,7 +383,7 @@ public class Server {
                 if (json.has("code") && json.get("code").getAsInt() != 200) {
                     System.err.println("⚠️ API Error (Limit or Invalid): " + json.get("message").getAsString());
                     // Flag false so we drop to fallback below
-                    apiCallSuccess = false; 
+                    apiCallSuccess = false;
                 } else {
                     apiCallSuccess = true;
                     // PARSE & UPDATE MEMORY
@@ -381,7 +411,8 @@ public class Server {
             }
 
             // 2. FALLBACK LOGIC
-            // If the API call failed (or missed some symbols), fill gaps using "lastKnownPrices"
+            // If the API call failed (or missed some symbols), fill gaps using
+            // "lastKnownPrices"
             for (String sym : validSymbols) {
                 if (!results.containsKey(sym)) {
                     if (lastKnownPrices.containsKey(sym)) {
@@ -398,32 +429,36 @@ public class Server {
             System.err.println("Error fetching prices: " + e.getMessage());
             // Total failure? Return everything from memory
             for (String sym : validSymbols) {
-                 results.put(sym, lastKnownPrices.getOrDefault(sym, 0.0));
+                results.put(sym, lastKnownPrices.getOrDefault(sym, 0.0));
             }
         }
-        
+
         return results;
     }
 
     private static Path resolveDataDirectory() {
         try {
             Path location = Paths.get(Server.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            if (Files.isRegularFile(location)) location = location.getParent();
+            if (Files.isRegularFile(location))
+                location = location.getParent();
             Path current = location;
             while (current != null && !current.getFileName().toString().equalsIgnoreCase("webservice")) {
                 current = current.getParent();
             }
-            if (current == null) current = Paths.get(System.getProperty("user.dir"));
+            if (current == null)
+                current = Paths.get(System.getProperty("user.dir"));
             Path dataDir = current.resolve("data");
-            if (!Files.exists(dataDir)) Files.createDirectories(dataDir);
+            if (!Files.exists(dataDir))
+                Files.createDirectories(dataDir);
             return dataDir;
         } catch (Exception e) {
-            return Paths.get("data"); 
+            return Paths.get("data");
         }
     }
 
     private static void loadAllHoldings(Gson gson, Path path) {
-        if (!Files.exists(path)) return;
+        if (!Files.exists(path))
+            return;
         try {
             JsonObject root = gson.fromJson(Files.readString(path), JsonObject.class);
             if (root != null && root.has("holdings")) {
@@ -432,14 +467,18 @@ public class Server {
                     Portfolio p = new Portfolio();
                     for (JsonElement e : holdingsObj.getAsJsonArray(username)) {
                         JsonObject h = e.getAsJsonObject();
-                        Stock s = new Stock(h.get("name").getAsString(), h.get("symbol").getAsString(), "US", h.get("price").getAsDouble());
-                        if (h.has("purchasePrice")) s.setPurchasePrice(h.get("purchasePrice").getAsDouble());
+                        Stock s = new Stock(h.get("name").getAsString(), h.get("symbol").getAsString(), "US",
+                                h.get("price").getAsDouble());
+                        if (h.has("purchasePrice"))
+                            s.setPurchasePrice(h.get("purchasePrice").getAsDouble());
                         p.addStock(s, h.get("quantity").getAsInt());
                     }
                     userPortfolios.put(username, p);
                 }
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private static void saveAllHoldings(Gson gson, Path path) {
@@ -456,18 +495,24 @@ public class Server {
             }
             root.add("holdings", holdingsObj);
             Files.writeString(path, gson.toJson(root));
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
-    
+
     private static void loadAllUsers(Gson gson, Path path) {
-        if (!Files.exists(path)) return;
+        if (!Files.exists(path))
+            return;
         try {
             JsonObject root = gson.fromJson(Files.readString(path), JsonObject.class);
             if (root != null && root.has("users")) {
-                List<User> loaded = gson.fromJson(root.get("users"), new TypeToken<List<User>>(){}.getType());
+                List<User> loaded = gson.fromJson(root.get("users"), new TypeToken<List<User>>() {
+                }.getType());
                 users.addAll(loaded);
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private static void saveAllUsers(Gson gson, Path path) {
@@ -475,7 +520,9 @@ public class Server {
             JsonObject root = new JsonObject();
             root.add("users", gson.toJsonTree(users));
             Files.writeString(path, gson.toJson(root));
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     // --- DTO CLASSES ---
@@ -483,13 +530,40 @@ public class Server {
     private static class StockReference {
         String symbol;
         String name;
-        public StockReference(String symbol, String name) { this.symbol = symbol; this.name = name; }
+
+        public StockReference(String symbol, String name) {
+            this.symbol = symbol;
+            this.name = name;
+        }
     }
+
     private static class ErrorResponse {
         public String message;
-        public ErrorResponse(String m) { this.message = m; }
+
+        public ErrorResponse(String m) {
+            this.message = m;
+        }
     }
-    private static class BuyStockRequest { public String name; public String symbol; public double price; public int quantity; }
-    private static class LoginRequest { public String username; public String password; }
-    private static class LoginResponse { public String token; public String username; public LoginResponse(String t, String u) { token=t; username=u; }}
+
+    private static class BuyStockRequest {
+        public String name;
+        public String symbol;
+        public double price;
+        public int quantity;
+    }
+
+    private static class LoginRequest {
+        public String username;
+        public String password;
+    }
+
+    private static class LoginResponse {
+        public String token;
+        public String username;
+
+        public LoginResponse(String t, String u) {
+            token = t;
+            username = u;
+        }
+    }
 }
