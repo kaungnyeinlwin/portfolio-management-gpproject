@@ -1,0 +1,80 @@
+# --------------------
+# Maven / Java Project
+# --------------------
+
+# Maven target directory
+target/
+webservice/target/
+
+# Build output
+*/target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Maven wrapper downloaded files
+.mvn/wrapper/maven-wrapper.jar
+
+# Spring Boot / Tomcat logs (if any)
+*.log
+
+# --------------------
+# IntelliJ / VS Code / Eclipse
+# --------------------
+
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# VS Code
+.vscode/
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# --------------------
+# OS-specific
+# --------------------
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# --------------------
+# Temporary files
+# --------------------
+*.tmp
+*.swp
+*.swo
+
+# --------------------
+# Java / Gradle
+# --------------------
+# (in case Gradle files accidentally appear)
+.gradle/
+build/
+
+# --------------------
+# Node / Web resources (if used later)
+# --------------------
+node_modules/
+
+# Ignore the data folder containing the local database
+data/
+webservice/data/
+
+# Ignore any random JSON files at the root (just in case)
+*.json
+
+# Ignore all .json files
+*.json
+
+# Ignore all .log files
+*.log

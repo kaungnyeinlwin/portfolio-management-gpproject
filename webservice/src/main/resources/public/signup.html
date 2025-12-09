@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Purrtfolio | Sign Up</title>
+  <style>
+    /* Copy CSS from login.html to preserve theme exactly */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: "Poppins", sans-serif;
+    }
+
+    body {
+      height: 100vh;
+      background: linear-gradient(135deg, #fce3ec, #ffe7c7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      color: #333;
+    }
+
+    .logo {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      background-color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin-bottom: 1.2rem;
+    }
+
+    .logo img {
+      width: 70px;
+      height: 70px;
+    }
+
+    .login-container {
+      background: #fff;
+      padding: 2.2rem;
+      border-radius: 20px;
+      width: 320px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      animation: fadeIn 0.6s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    h2 {
+      font-size: 1.6rem;
+      color: #222;
+      margin-bottom: 1.5rem;
+    }
+
+    label {
+      display: block;
+      text-align: left;
+      font-size: 0.9rem;
+      color: #444;
+      margin-bottom: 6px;
+      margin-top: 10px;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      margin-bottom: 1rem;
+      transition: all 0.3s ease;
+    }
+
+    input:focus {
+      border-color: #ffb3c1;
+      outline: none;
+      box-shadow: 0 0 6px rgba(255, 179, 193, 0.4);
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      font-size: 1rem;
+      background: #ffb3c1;
+      color: #fff;
+      border: none;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-top: 5px;
+      font-weight: 600;
+    }
+
+    button:hover {
+      background: #ff94a2;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .back-link {
+      display: block;
+      margin-top: 1rem;
+      color: #777;
+      font-size: 0.9rem;
+      text-decoration: none;
+      transition: color 0.3s ease;
+    }
+
+    .back-link:hover {
+      color: #ff94a2;
+    }
+
+    footer {
+      position: absolute;
+      bottom: 15px;
+      font-size: 0.85rem;
+      color: #777;
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <img src="logo.png" alt="Purrtfolio Logo" />
+  </div>
+
+  <div class="login-container">
+    <h2>Sign Up for Purrtfolio 🐾</h2>
+
+    <form id="signupForm">
+      <label for="username">Username</label>
+      <input type="text" id="username" required />
+
+      <label for="password">Password</label>
+      <input type="password" id="password" required />
+
+      <button type="submit">Create Account</button>
+    </form>
+
+    <a href="login.html" class="back-link">← Back to Login</a>
+  </div>
+
+  <footer>© 2025 Purrtfolio. All rights reserved.</footer>
+
+  <script>
+    document.getElementById("signupForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+
+      try {
+        const res = await fetch("/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+
+        const text = await res.text();
+
+        if (res.status === 201) {
+          alert("Account created. Please login.");
+          window.location.href = "login.html";
+        } else {
+          let msg = "Failed to create account.";
+          try { msg = JSON.parse(text).error || text; } catch (e) {}
+          alert(msg);
+        }
+      } catch (err) {
+        alert("Error: " + err);
+      }
+    });
+  </script>
+</body>
+</html>
