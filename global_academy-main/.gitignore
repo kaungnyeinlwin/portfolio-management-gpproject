@@ -72,3 +72,9 @@ webservice/data/
 
 # Ignore any random JSON files at the root (just in case)
 *.json
+
+# Ignore all .json files
+*.json
+
+# Ignore all .log files
+*.log
