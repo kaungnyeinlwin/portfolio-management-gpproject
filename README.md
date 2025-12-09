@@ -10,128 +10,132 @@
 
 ===================================================================
 ```
-# Purrtfolio: Manage Your Assets with Claw-ver Confidence
 
-## 🐱 Stop Chasing Lasers, Start Chasing Returns!
+# 🐾 Purrtfolio - Portfolio Management System
 
-Tired of feeling like your finances are tangled up in yarn? Welcome to **Purrtfolio**, the investment management web application that brings clarity, comfort, and pawsome returns to your financial future. We believe that managing money should feel as effortless as a cat nap—safe, secure, and deeply satisfying.
+> *Your purr-fect companion for managing stocks with a little extra fluff.*
 
-Built with Java and modern web technologies, Purrtfolio is a full-stack portfolio management system that lets you track stocks, monitor your investments, and watch your wealth grow in real-time!
+A full-stack web application for tracking stock portfolios with real-time prices, built with Java and modern web technologies. Purrtfolio combines financial clarity with a warm, pet-friendly charm.
+
+[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
+[![Maven](https://img.shields.io/badge/Maven-3.6+-blue.svg)](https://maven.apache.org/)
+[![License](https://img.shields.io/badge/License-Educational-green.svg)]()
 
 ---
 
-## 🚀 Features
+## ✨ Features
 
-- ✅ **User Authentication** - Secure signup and login system
-- ✅ **Portfolio Management** - Track your stock holdings in one place
-- ✅ **Real-Time Stock Prices** - Live data from Twelve Data API
-- ✅ **Stock Search** - Find and explore thousands of NASDAQ stocks
-- ✅ **Buy Stocks** - Purchase stocks and build your portfolio
-- ✅ **Profit/Loss Tracking** - See your gains and losses at a glance
-- ✅ **Responsive Dashboard** - Beautiful, easy-to-use interface
+- 📈 **Portfolio Tracking** - Monitor all your stock holdings in one dashboard
+- 💹 **Real-Time Prices** - Live stock data from Twelve Data API
+- 🔍 **Stock Search** - Find and explore thousands of NASDAQ stocks
+- 🛒 **Buy Stocks** - Quick and easy stock purchases
+- 📊 **Profit/Loss Tracking** - See your gains and losses at a glance
+- 🔐 **User Authentication** - Secure signup and login system
+- 💾 **Data Persistence** - Your portfolio is automatically saved
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Java 21 or higher
+- Maven 3.6+
+- Internet connection (for stock price API)
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/kaungnyeinlwin/portfolio-management-gpproject.git
+   cd portfolio-management-gpproject/webservice
+   ```
+
+2. **Build the project**
+   ```bash
+   mvn clean package
+   ```
+
+3. **Run the application**
+   ```bash
+   java -jar target/spark-hello-1.0-SNAPSHOT-jar-with-dependencies.jar
+   ```
+
+4. **Access the app**
+   ```
+   Open your browser: http://localhost:8080
+   ```
 
 ---
 
 ## 🏗️ Architecture
 
-This project follows professional **MVC (Model-View-Controller)** architecture with additional Service and Repository layers:
+This project follows **MVC (Model-View-Controller)** architecture with Service and Repository layers:
 
 ```
-📁 Project Structure
-├── model/          # Domain entities (User, Stock, Portfolio)
-├── controller/     # HTTP request handlers
-├── service/        # Business logic layer
-├── repository/     # Data access layer
-├── dto/            # Data transfer objects
-└── config/         # Application configuration
+📁 src/main/java/org/global/academy/
+├── 📄 Server.java          # Application entry point
+├── 📂 config/              # Configuration (API keys, constants)
+├── 📂 model/               # Domain entities (User, Stock, Portfolio)
+├── 📂 controller/          # HTTP request handlers
+├── 📂 service/             # Business logic layer
+├── 📂 repository/          # Data access layer
+└── 📂 dto/                 # Data transfer objects
 ```
 
-### Technology Stack
-
+**Technology Stack:**
 - **Backend**: Java 21, Spark Framework
 - **Frontend**: HTML, CSS, JavaScript
-- **Data Storage**: JSON files
-- **External API**: Twelve Data (stock prices)
-- **Build Tool**: Maven
+- **Data**: JSON file storage
+- **API**: Twelve Data (stock prices)
+- **Build**: Maven
+
+📖 **[View Architecture Diagram](ARCHITECTURE_DIAGRAM.md)** for detailed structure
 
 ---
 
-## 📋 Prerequisites
+## 📱 Usage
 
-- Java 21 or higher
-- Maven 3.6+
-- Internet connection (for stock price API)
+### 1. Create an Account
+- Navigate to signup page
+- Enter username and password
+- Click "Sign Up"
 
----
+### 2. Search for Stocks
+- Use the search bar on the buy stocks page
+- Search by symbol (e.g., "AAPL") or company name (e.g., "Apple")
+- View real-time prices
 
-## 🛠️ Installation & Setup
+### 3. Buy Stocks
+- Select a stock from search results
+- Enter the quantity you want to purchase
+- Click "Buy" to add to your portfolio
 
-### 1. Clone the Repository
-```bash
-git clone <your-repo-url>
-cd portfolio-management-gpproject/webservice
-```
-
-### 2. Build the Project
-```bash
-mvn clean package
-```
-
-### 3. Run the Application
-```bash
-java -jar target/spark-hello-1.0-SNAPSHOT-jar-with-dependencies.jar
-```
-
-Or using Maven:
-```bash
-mvn exec:java -Dexec.mainClass="org.global.academy.Server"
-```
-
-### 4. Access the Application
-Open your browser and navigate to:
-```
-http://localhost:8080
-```
+### 4. Track Your Portfolio
+- View your dashboard to see all holdings
+- Monitor current prices and profit/loss
+- Watch your total portfolio value update in real-time
 
 ---
 
-## 📱 How to Use
+## 🔌 API Endpoints
 
-### 1. **Sign Up**
-- Navigate to the signup page
-- Create your account with a username and password
-- You'll be automatically logged in
+### Authentication
+```
+POST   /login              # User login
+POST   /signup             # User registration
+GET    /logout             # User logout
+```
 
-### 2. **Search for Stocks**
-- Use the search bar to find stocks by symbol or company name
-- View real-time prices for thousands of NASDAQ stocks
+### Portfolio
+```
+GET    /api/portfolio      # Get user's portfolio with current prices
+POST   /api/buy-stock      # Purchase stocks
+```
 
-### 3. **Buy Stocks**
-- Select a stock and specify the quantity
-- Add it to your portfolio with one click
-
-### 4. **Track Your Portfolio**
-- View all your holdings on the dashboard
-- See current prices, gains/losses, and total portfolio value
-- Watch your wealth grow in real-time!
-
----
-
-## 🎯 Why Choose Purrtfolio?
-
-At Purrtfolio, we offer more than just portfolio management; we offer a cat-alyst for true financial growth, backed by sophisticated, data-driven strategies.
-
-### 🐾 Key Benefits
-
-* **Tailored Investment Strategies**: Every cat is unique, and so is every portfolio. We craft strategies that are purr-fectly matched to your long-term goals and risk tolerance. We focus on diversification, ensuring your assets have nine lives.
-
-* **Real-Time Tracking**: Keep a watchful eye on your nest egg with our easy-to-use digital dashboard. No more guessing games—you'll see your growth in real time, making you feel feline good about your financial health.
-
-* **Claw-ver Technology**: Built with professional MVC architecture, our system is maintainable, scalable, and follows industry best practices. Your data is in capable paws.
-
-* **Low Maintenance, High Reward**: We handle the complex daily decisions so you don't have to. Set it and forget it, just like your human setting out your favorite kibble. Your wealth is in capable paws.
-
-* **Zero Hidden Fees**: We are open book! Unlike that mysterious midnight meowing, our pricing structure is crystal clear and straightforward.
+### Stocks
+```
+GET    /api/stocks?q=<query>   # Search for stocks
+```
 
 ---
 
@@ -141,40 +145,24 @@ At Purrtfolio, we offer more than just portfolio management; we offer a cat-alys
 portfolio-management-gpproject/
 ├── webservice/
 │   ├── src/main/java/org/global/academy/
-│   │   ├── Server.java                 # Main application
-│   │   ├── config/                     # Configuration
-│   │   ├── model/                      # Domain models
-│   │   ├── controller/                 # HTTP controllers
-│   │   ├── service/                    # Business logic
-│   │   ├── repository/                 # Data access
-│   │   └── dto/                        # Data transfer objects
+│   │   ├── Server.java
+│   │   ├── config/
+│   │   ├── model/
+│   │   ├── controller/
+│   │   ├── service/
+│   │   ├── repository/
+│   │   └── dto/
 │   ├── src/main/resources/
-│   │   └── public/                     # HTML, CSS, JS files
-│   ├── data/                           # JSON data files
-│   └── pom.xml                         # Maven configuration
-├── ARCHITECTURE_DIAGRAM.md             # Architecture documentation
-└── README.md                           # This file
+│   │   └── public/              # HTML, CSS, JS files
+│   ├── data/                    # JSON data storage
+│   └── pom.xml
+├── ARCHITECTURE_DIAGRAM.md
+└── README.md
 ```
 
 ---
 
-## 🧪 API Endpoints
-
-### Authentication
-- `POST /login` - User login
-- `POST /signup` - User registration
-- `GET /logout` - User logout
-
-### Portfolio
-- `GET /api/portfolio` - Get user's portfolio with current prices
-- `POST /api/buy-stock` - Purchase stocks
-
-### Stocks
-- `GET /api/stocks?q=<query>` - Search for stocks
-
----
-
-## This project demonstrates:
+## 🎓 What This Project Demonstrates
 
 - ✅ **MVC Architecture** - Proper separation of concerns
 - ✅ **RESTful API Design** - Clean, intuitive endpoints
@@ -193,26 +181,11 @@ portfolio-management-gpproject/
 
 ---
 
-## 📄 License
-
-This project is for educational purposes.
-
----
-
-## 🐱 Ready to Land on Your Feet?
-
-It's time to stop swatting at shadows and build a portfolio that's the cat's meow. Join the thousands of users who are already enjoying un-fur-gettable financial freedom.
-
-Start using Purrtfolio today, and let's get this purrtfolio purring!
-
-![300px-Thumbs_Up_Crying_Cat](https://github.com/user-attachments/assets/14708027-3f79-4edf-a97d-9720c14966a0)
-
----
-
+## 🐛 Troubleshooting
 
 **Stock prices not loading?**
 - Check your internet connection
-- Verify the Twelve Data API key in `AppConfig.java`
+- Verify the API key in `AppConfig.java`
 - The app uses cached prices as fallback
 
 ---
@@ -226,8 +199,28 @@ Start using Purrtfolio today, and let's get this purrtfolio purring!
 - [ ] Database integration (PostgreSQL/MySQL)
 - [ ] Password hashing (BCrypt)
 - [ ] JWT authentication
-- [ ] Mobile responsive design improvements
+- [ ] Mobile responsive design
 
 ---
+
+## 📚 Documentation
+
+- 📖 **[Architecture Diagram](ARCHITECTURE_DIAGRAM.md)** - Detailed MVC structure
+- 📖 **[Wiki](../../wiki)** - User guides and feature documentation
+- 📖 **Javadoc** - Generate with `mvn javadoc:javadoc`
+
+---
+
+## 📄 License
+
+This project is for educational purposes.
+
+---
+
+## 💛 Why Purrtfolio?
+
+Purrtfolio blends **financial clarity** with **warm, pet-friendly charm**, making your investing journey both productive and delightful. Like a loyal companion sitting quietly by your side, Purrtfolio is here to guide you—one paw at a time.
+
+![Purrtfolio Cat](https://github.com/user-attachments/assets/14708027-3f79-4edf-a97d-9720c14966a0)
 
 **Happy Investing! 🐾📈**
