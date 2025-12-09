@@ -207,7 +207,6 @@ portfolio-management-gpproject/
 
 - 📖 **[Architecture Diagram](ARCHITECTURE_DIAGRAM.md)** - Detailed MVC structure
 - 📖 **[Wiki](../../wiki)** - User guides and feature documentation
-- 📖 **Javadoc** - Generate with `mvn javadoc:javadoc`
 
 ---
 
